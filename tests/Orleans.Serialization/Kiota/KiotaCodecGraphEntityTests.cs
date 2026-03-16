@@ -10,52 +10,7 @@ namespace Orleans.Serialization.Kiota.Tests;
 
 public sealed class KiotaCodecGraphEntityTests(ITestOutputHelper output)
 {
-    public static TheoryData<KiotaCodecKind, GraphEntityKind, bool> GraphCodecCases =>
-        new()
-        {
-            { KiotaCodecKind.Json, GraphEntityKind.User, false },
-            { KiotaCodecKind.Json, GraphEntityKind.User, true },
-            { KiotaCodecKind.Json, GraphEntityKind.Message, false },
-            { KiotaCodecKind.Json, GraphEntityKind.Message, true },
-            { KiotaCodecKind.Json, GraphEntityKind.Event, false },
-            { KiotaCodecKind.Json, GraphEntityKind.Event, true },
-            { KiotaCodecKind.Json, GraphEntityKind.Group, false },
-            { KiotaCodecKind.Json, GraphEntityKind.Group, true },
-            { KiotaCodecKind.Json, GraphEntityKind.Contact, false },
-            { KiotaCodecKind.Json, GraphEntityKind.Contact, true },
-            { KiotaCodecKind.Json, GraphEntityKind.DriveItem, false },
-            { KiotaCodecKind.Json, GraphEntityKind.DriveItem, true },
-            { KiotaCodecKind.Json, GraphEntityKind.Team, false },
-            { KiotaCodecKind.Json, GraphEntityKind.Team, true },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.User, false },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.User, true },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Message, false },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Message, true },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Event, false },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Event, true },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Group, false },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Group, true },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Contact, false },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Contact, true },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.DriveItem, false },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.DriveItem, true },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Team, false },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Team, true },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.User, false },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.User, true },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Message, false },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Message, true },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Event, false },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Event, true },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Group, false },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Group, true },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Contact, false },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Contact, true },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.DriveItem, false },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.DriveItem, true },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Team, false },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Team, true },
-        };
+    public static TheoryData<KiotaCodecKind, GraphEntityKind, bool> GraphCodecCases => CreateGraphCodecCases();
 
     public static TheoryData<KiotaCodecKind, bool> CodecCompressionCases =>
         new()
@@ -198,5 +153,21 @@ public sealed class KiotaCodecGraphEntityTests(ITestOutputHelper output)
     private sealed class MemoryPackMessageCopierTester(ITestOutputHelper output, bool compression) : MessageCopierTester(output, compression)
     {
         protected override KiotaCodecKind CodecKind => KiotaCodecKind.MemoryPack;
+    }
+
+    private static TheoryData<KiotaCodecKind, GraphEntityKind, bool> CreateGraphCodecCases()
+    {
+        var cases = new TheoryData<KiotaCodecKind, GraphEntityKind, bool>();
+
+        foreach (var codecKind in Enum.GetValues<KiotaCodecKind>())
+        {
+            foreach (var entityKind in Enum.GetValues<GraphEntityKind>())
+            {
+                cases.Add(codecKind, entityKind, false);
+                cases.Add(codecKind, entityKind, true);
+            }
+        }
+
+        return cases;
     }
 }

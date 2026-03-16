@@ -82,13 +82,15 @@ Short-run `SerializeCompressed` comparison excerpt from the latest generated rep
 
 | Collection Shape | Entity | Json Mean / Ratio / Allocated | MessagePack Mean / Ratio / Allocated | MemoryPack Mean / Ratio / Allocated |
 |---|---|---|---|---|
-| PrimitiveAndObjectCollections | User | 48.91 us / 48.52% / 2.52 KB | 139.96 us / 70.17% / 26.68 KB | 152.79 us / 75.94% / 26.91 KB |
-| AttachmentHeavyCollections | Message | 63.83 us / 79.95% / 1.66 KB | 78.89 us / 77.53% / 18.86 KB | 96.17 us / 77.82% / 22.2 KB |
-| SchedulingCollections | Event | 53.47 us / 68.22% / 1.64 KB | 82.30 us / 63.10% / 17.28 KB | 117.21 us / 68.04% / 18 KB |
-| DirectoryCollections | Group | 49.03 us / 68.86% / 3.78 KB | 168.39 us / 78.99% / 56.66 KB | 183.65 us / 82.85% / 65.19 KB |
-| MostlyPrimitiveCollections | Contact | 37.31 us / 48.34% / 1.16 KB | 53.23 us / 44.23% / 6.75 KB | 58.96 us / 57.11% / 6.75 KB |
-| HierarchicalCollections | DriveItem | 55.92 us / 71.73% / 5.48 KB | 126.17 us / 77.99% / 31.3 KB | 168.31 us / 83.27% / 45.21 KB |
-| NestedAggregateCollections | Team | 108.20 us / 71.50% / 4.63 KB | 231.69 us / 77.53% / 79.7 KB | 250.37 us / 81.56% / 108.84 KB |
+| PrimitiveAndObjectCollections | User | 38.05 us / 48.52% / 2.52 KB | 122.93 us / 70.17% / 26.68 KB | 138.30 us / 75.91% / 26.92 KB |
+| AttachmentHeavyCollections | Message | 60.89 us / 79.95% / 1.66 KB | 68.61 us / 77.53% / 18.86 KB | 81.35 us / 77.77% / 22.2 KB |
+| ConversationCollections | Chat | 126.42 us / 77.36% / 5.63 KB | 220.62 us / 75.01% / 92.93 KB | 255.36 us / 79.21% / 96.13 KB |
+| InteractionCollections | ChatMessage | 75.14 us / 73.69% / 2.75 KB | 100.76 us / 72.82% / 22.56 KB | 102.61 us / 75.96% / 27.88 KB |
+| SchedulingCollections | Event | 48.51 us / 68.22% / 1.64 KB | 80.27 us / 63.10% / 17.28 KB | 98.72 us / 67.99% / 18.01 KB |
+| DirectoryCollections | Group | 50.61 us / 68.86% / 3.78 KB | 194.11 us / 78.99% / 56.66 KB | 184.55 us / 82.83% / 65.19 KB |
+| MostlyPrimitiveCollections | Contact | 41.30 us / 48.34% / 1.16 KB | 81.78 us / 44.23% / 6.75 KB | 91.07 us / 57.02% / 6.76 KB |
+| HierarchicalCollections | DriveItem | 60.03 us / 71.73% / 5.48 KB | 118.50 us / 77.99% / 31.3 KB | 130.19 us / 83.23% / 45.21 KB |
+| NestedAggregateCollections | Team | 73.83 us / 71.50% / 4.63 KB | 218.65 us / 77.53% / 79.7 KB | 233.72 us / 81.55% / 108.84 KB |
 
 ## Documentation
 

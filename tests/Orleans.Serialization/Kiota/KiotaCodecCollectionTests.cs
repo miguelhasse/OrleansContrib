@@ -166,6 +166,12 @@ public sealed class KiotaCodecCollectionTests
             case GraphEntityKind.Message:
                 AssertMessageCollectionsDetached(Assert.IsType<Message>(expected), Assert.IsType<Message>(actual));
                 break;
+            case GraphEntityKind.Chat:
+                AssertChatCollectionsDetached(Assert.IsType<Chat>(expected), Assert.IsType<Chat>(actual));
+                break;
+            case GraphEntityKind.ChatMessage:
+                AssertChatMessageCollectionsDetached(Assert.IsType<ChatMessage>(expected), Assert.IsType<ChatMessage>(actual));
+                break;
             case GraphEntityKind.Event:
                 AssertEventCollectionsDetached(Assert.IsType<Event>(expected), Assert.IsType<Event>(actual));
                 break;
@@ -244,6 +250,72 @@ public sealed class KiotaCodecCollectionTests
         {
             Assert.NotSame(expected.Locations[index], actual.Locations![index]);
         }
+    }
+
+    private static void AssertChatCollectionsDetached(Chat expected, Chat actual)
+    {
+        Assert.NotSame(expected.LastMessagePreview, actual.LastMessagePreview);
+        Assert.NotSame(expected.Viewpoint, actual.Viewpoint);
+        Assert.NotSame(expected.Members, actual.Members);
+        Assert.NotSame(expected.Messages, actual.Messages);
+
+        for (var index = 0; index < expected.Members!.Count; index++)
+        {
+            Assert.NotSame(expected.Members[index], actual.Members![index]);
+        }
+
+        for (var index = 0; index < expected.Messages!.Count; index++)
+        {
+            Assert.NotSame(expected.Messages[index], actual.Messages![index]);
+        }
+
+        AssertChatMessageCollectionsDetached(expected.Messages[0], actual.Messages![0]);
+    }
+
+    private static void AssertChatMessageCollectionsDetached(ChatMessage expected, ChatMessage actual)
+    {
+        Assert.NotSame(expected.Body, actual.Body);
+        Assert.NotSame(expected.From, actual.From);
+        Assert.NotSame(expected.Attachments, actual.Attachments);
+        Assert.NotSame(expected.HostedContents, actual.HostedContents);
+        Assert.NotSame(expected.Mentions, actual.Mentions);
+        Assert.NotSame(expected.MessageHistory, actual.MessageHistory);
+        Assert.NotSame(expected.Reactions, actual.Reactions);
+        Assert.NotSame(expected.Replies, actual.Replies);
+
+        for (var index = 0; index < expected.Attachments!.Count; index++)
+        {
+            Assert.NotSame(expected.Attachments[index], actual.Attachments![index]);
+        }
+
+        for (var index = 0; index < expected.HostedContents!.Count; index++)
+        {
+            Assert.NotSame(expected.HostedContents[index], actual.HostedContents![index]);
+            Assert.NotSame(expected.HostedContents[index].ContentBytes, actual.HostedContents[index].ContentBytes);
+        }
+
+        for (var index = 0; index < expected.Mentions!.Count; index++)
+        {
+            Assert.NotSame(expected.Mentions[index], actual.Mentions![index]);
+        }
+
+        for (var index = 0; index < expected.MessageHistory!.Count; index++)
+        {
+            Assert.NotSame(expected.MessageHistory[index], actual.MessageHistory![index]);
+        }
+
+        for (var index = 0; index < expected.Reactions!.Count; index++)
+        {
+            Assert.NotSame(expected.Reactions[index], actual.Reactions![index]);
+        }
+
+        for (var index = 0; index < expected.Replies!.Count; index++)
+        {
+            Assert.NotSame(expected.Replies[index], actual.Replies![index]);
+        }
+
+        Assert.NotSame(expected.Replies[0].Body, actual.Replies![0].Body);
+        Assert.NotSame(expected.Replies[0].From, actual.Replies[0].From);
     }
 
     private static void AssertGroupCollectionsDetached(Group expected, Group actual)

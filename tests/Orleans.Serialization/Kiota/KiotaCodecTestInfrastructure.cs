@@ -18,6 +18,8 @@ public enum GraphEntityKind
 {
     User,
     Message,
+    Chat,
+    ChatMessage,
     Event,
     Group,
     Contact,
@@ -29,6 +31,8 @@ public enum GraphEntityCollectionShape
 {
     PrimitiveAndObjectCollections,
     AttachmentHeavyCollections,
+    ConversationCollections,
+    InteractionCollections,
     SchedulingCollections,
     DirectoryCollections,
     MostlyPrimitiveCollections,
@@ -102,6 +106,8 @@ public static class GraphEntitySamples
     {
         GraphEntityKind.User => CreateUser(),
         GraphEntityKind.Message => CreateMessage(),
+        GraphEntityKind.Chat => CreateChat(),
+        GraphEntityKind.ChatMessage => CreateChatMessage(),
         GraphEntityKind.Event => CreateEvent(),
         GraphEntityKind.Group => CreateGroup(),
         GraphEntityKind.Contact => CreateContact(),
@@ -114,6 +120,8 @@ public static class GraphEntitySamples
     {
         GraphEntityKind.User => GraphEntityCollectionShape.PrimitiveAndObjectCollections,
         GraphEntityKind.Message => GraphEntityCollectionShape.AttachmentHeavyCollections,
+        GraphEntityKind.Chat => GraphEntityCollectionShape.ConversationCollections,
+        GraphEntityKind.ChatMessage => GraphEntityCollectionShape.InteractionCollections,
         GraphEntityKind.Event => GraphEntityCollectionShape.SchedulingCollections,
         GraphEntityKind.Group => GraphEntityCollectionShape.DirectoryCollections,
         GraphEntityKind.Contact => GraphEntityCollectionShape.MostlyPrimitiveCollections,
@@ -475,6 +483,226 @@ public static class GraphEntitySamples
                 GuestsCount = 1,
             },
             Group = CreateGroup(),
+        };
+
+    public static Chat CreateChat() =>
+        new()
+        {
+            OdataType = "#microsoft.graph.chat",
+            Id = "chat-orleans-kiota",
+            Topic = "Orleans + Kiota serializer rollout",
+            TenantId = "tenant-contoso",
+            WebUrl = "https://teams.microsoft.example/l/chat-orleans-kiota",
+            IsHiddenForAllMembers = false,
+            CreatedDateTime = DateTimeOffset.Parse("2026-03-15T14:00:00Z"),
+            LastUpdatedDateTime = DateTimeOffset.Parse("2026-03-16T08:45:00Z"),
+            LastMessagePreview = new ChatMessageInfo
+            {
+                OdataType = "#microsoft.graph.chatMessageInfo",
+                Id = "chatmessage-preview-release-plan",
+                CreatedDateTime = DateTimeOffset.Parse("2026-03-16T08:40:00Z"),
+                IsDeleted = false,
+                Body = new ItemBody
+                {
+                    Content = CreateLongText("Previewing the latest serializer coverage status for chat entities.", 4),
+                },
+                From = new ChatMessageFromIdentitySet
+                {
+                    User = new Identity
+                    {
+                        DisplayName = "Ada Lovelace",
+                        Id = "user-ada-lovelace",
+                    },
+                },
+            },
+            Viewpoint = new ChatViewpoint
+            {
+                OdataType = "#microsoft.graph.chatViewpoint",
+                IsHidden = false,
+                LastMessageReadDateTime = DateTimeOffset.Parse("2026-03-16T08:41:00Z"),
+            },
+            Members =
+            [
+                new AadUserConversationMember
+                {
+                    OdataType = "#microsoft.graph.aadUserConversationMember",
+                    Id = "member-ada-lovelace",
+                    DisplayName = "Ada Lovelace",
+                    Email = "ada.lovelace@contoso.example",
+                    Roles =
+                    [
+                        "owner",
+                    ],
+                    TenantId = "tenant-contoso",
+                    UserId = "user-ada-lovelace",
+                    VisibleHistoryStartDateTime = DateTimeOffset.Parse("2026-03-15T14:00:00Z"),
+                    User = new User
+                    {
+                        OdataType = "#microsoft.graph.user",
+                        Id = "user-ada-lovelace",
+                        DisplayName = "Ada Lovelace",
+                        Mail = "ada.lovelace@contoso.example",
+                    },
+                },
+                new AadUserConversationMember
+                {
+                    OdataType = "#microsoft.graph.aadUserConversationMember",
+                    Id = "member-grace-hopper",
+                    DisplayName = "Grace Hopper",
+                    Email = "grace.hopper@contoso.example",
+                    Roles =
+                    [
+                        "member",
+                    ],
+                    TenantId = "tenant-contoso",
+                    UserId = "user-grace-hopper",
+                    VisibleHistoryStartDateTime = DateTimeOffset.Parse("2026-03-15T14:05:00Z"),
+                    User = new User
+                    {
+                        OdataType = "#microsoft.graph.user",
+                        Id = "user-grace-hopper",
+                        DisplayName = "Grace Hopper",
+                        Mail = "grace.hopper@contoso.example",
+                    },
+                },
+            ],
+            Messages =
+            [
+                CreateChatMessage(),
+            ],
+        };
+
+    public static ChatMessage CreateChatMessage() =>
+        new()
+        {
+            OdataType = "#microsoft.graph.chatMessage",
+            Id = "chatmessage-release-plan",
+            ChatId = "chat-orleans-kiota",
+            Subject = "Release readiness",
+            Summary = "Review serializer coverage for chat entities.",
+            Locale = "en-US",
+            WebUrl = "https://teams.microsoft.example/l/message/chatmessage-release-plan",
+            ReplyToId = "chatmessage-root",
+            Etag = "chatmessage-v1",
+            CreatedDateTime = DateTimeOffset.Parse("2026-03-16T08:40:00Z"),
+            LastEditedDateTime = DateTimeOffset.Parse("2026-03-16T08:42:00Z"),
+            LastModifiedDateTime = DateTimeOffset.Parse("2026-03-16T08:43:00Z"),
+            Body = new ItemBody
+            {
+                Content = CreateLongText("ChatMessage payloads should preserve collections, hosted content, and replies.", 6),
+            },
+            From = new ChatMessageFromIdentitySet
+            {
+                User = new Identity
+                {
+                    DisplayName = "Ada Lovelace",
+                    Id = "user-ada-lovelace",
+                },
+            },
+            Attachments =
+            [
+                new ChatMessageAttachment
+                {
+                    Id = "attachment-release-checklist",
+                    Content = "release-checklist.json",
+                    ContentType = "reference",
+                    ContentUrl = "https://contoso.example/release-checklist.json",
+                    Name = "Release checklist",
+                    TeamsAppId = "teams-app-kiota",
+                    ThumbnailUrl = "https://contoso.example/release-checklist.png",
+                },
+            ],
+            HostedContents =
+            [
+                new ChatMessageHostedContent
+                {
+                    Id = "hosted-content-inline-note",
+                    ContentType = "text/plain",
+                    ContentBytes = Encoding.UTF8.GetBytes(CreateLongText("Hosted content bytes for inline chat rendering.", 4)),
+                },
+            ],
+            Mentions =
+            [
+                new ChatMessageMention
+                {
+                    Id = 0,
+                    MentionText = "Grace Hopper",
+                    Mentioned = new ChatMessageMentionedIdentitySet
+                    {
+                        User = new Identity
+                        {
+                            DisplayName = "Grace Hopper",
+                            Id = "user-grace-hopper",
+                        },
+                    },
+                },
+            ],
+            MessageHistory =
+            [
+                new ChatMessageHistoryItem
+                {
+                    ModifiedDateTime = DateTimeOffset.Parse("2026-03-16T08:42:30Z"),
+                    Reaction = new ChatMessageReaction
+                    {
+                        CreatedDateTime = DateTimeOffset.Parse("2026-03-16T08:42:15Z"),
+                        DisplayName = "Grace Hopper",
+                        ReactionContentUrl = "https://contoso.example/reactions/like",
+                        ReactionType = "like",
+                        User = new ChatMessageReactionIdentitySet
+                        {
+                            User = new Identity
+                            {
+                                DisplayName = "Grace Hopper",
+                                Id = "user-grace-hopper",
+                            },
+                        },
+                    },
+                },
+            ],
+            Reactions =
+            [
+                new ChatMessageReaction
+                {
+                    CreatedDateTime = DateTimeOffset.Parse("2026-03-16T08:42:15Z"),
+                    DisplayName = "Grace Hopper",
+                    ReactionContentUrl = "https://contoso.example/reactions/like",
+                    ReactionType = "like",
+                    User = new ChatMessageReactionIdentitySet
+                    {
+                        User = new Identity
+                        {
+                            DisplayName = "Grace Hopper",
+                            Id = "user-grace-hopper",
+                        },
+                    },
+                },
+            ],
+            Replies =
+            [
+                new ChatMessage
+                {
+                    OdataType = "#microsoft.graph.chatMessage",
+                    Id = "chatmessage-release-plan-reply",
+                    ChatId = "chat-orleans-kiota",
+                    ReplyToId = "chatmessage-release-plan",
+                    Summary = "Follow-up approval.",
+                    Locale = "en-US",
+                    WebUrl = "https://teams.microsoft.example/l/message/chatmessage-release-plan-reply",
+                    CreatedDateTime = DateTimeOffset.Parse("2026-03-16T08:44:00Z"),
+                    Body = new ItemBody
+                    {
+                        Content = "Ship it.",
+                    },
+                    From = new ChatMessageFromIdentitySet
+                    {
+                        User = new Identity
+                        {
+                            DisplayName = "Grace Hopper",
+                            Id = "user-grace-hopper",
+                        },
+                    },
+                },
+            ],
         };
 
     private static Recipient CreateRecipient(string name, string address) =>
