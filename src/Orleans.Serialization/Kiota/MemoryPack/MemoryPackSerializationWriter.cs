@@ -3,6 +3,7 @@ using Microsoft.Kiota.Abstractions;
 using Microsoft.Kiota.Abstractions.Serialization;
 using System.Buffers;
 using System.Globalization;
+using System.Linq;
 
 namespace Orleans.Serialization;
 
@@ -70,7 +71,7 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         WriteKey(key);
         if (value is null) { WriteTag(ValueTag.Null); return; }
         WriteTag(ValueTag.String);
-        WriteRawBytes(MemoryPackSerializer.Serialize(value));
+        WriteSerializedValue(value);
     }
 
     public void WriteBoolValue(string? key, bool? value)
@@ -78,7 +79,7 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         WriteKey(key);
         if (value is null) { WriteTag(ValueTag.Null); return; }
         WriteTag(ValueTag.Bool);
-        WriteRawBytes(MemoryPackSerializer.Serialize(value.Value));
+        WriteSerializedValue(value.Value);
     }
 
     public void WriteByteValue(string? key, byte? value)
@@ -86,7 +87,7 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         WriteKey(key);
         if (value is null) { WriteTag(ValueTag.Null); return; }
         WriteTag(ValueTag.Byte);
-        WriteRawBytes(MemoryPackSerializer.Serialize(value.Value));
+        WriteSerializedValue(value.Value);
     }
 
     public void WriteSbyteValue(string? key, sbyte? value)
@@ -94,7 +95,7 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         WriteKey(key);
         if (value is null) { WriteTag(ValueTag.Null); return; }
         WriteTag(ValueTag.SByte);
-        WriteRawBytes(MemoryPackSerializer.Serialize(value.Value));
+        WriteSerializedValue(value.Value);
     }
 
     public void WriteIntValue(string? key, int? value)
@@ -102,7 +103,7 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         WriteKey(key);
         if (value is null) { WriteTag(ValueTag.Null); return; }
         WriteTag(ValueTag.Int);
-        WriteRawBytes(MemoryPackSerializer.Serialize(value.Value));
+        WriteSerializedValue(value.Value);
     }
 
     public void WriteLongValue(string? key, long? value)
@@ -110,7 +111,7 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         WriteKey(key);
         if (value is null) { WriteTag(ValueTag.Null); return; }
         WriteTag(ValueTag.Long);
-        WriteRawBytes(MemoryPackSerializer.Serialize(value.Value));
+        WriteSerializedValue(value.Value);
     }
 
     public void WriteFloatValue(string? key, float? value)
@@ -118,7 +119,7 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         WriteKey(key);
         if (value is null) { WriteTag(ValueTag.Null); return; }
         WriteTag(ValueTag.Float);
-        WriteRawBytes(MemoryPackSerializer.Serialize(value.Value));
+        WriteSerializedValue(value.Value);
     }
 
     public void WriteDoubleValue(string? key, double? value)
@@ -126,7 +127,7 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         WriteKey(key);
         if (value is null) { WriteTag(ValueTag.Null); return; }
         WriteTag(ValueTag.Double);
-        WriteRawBytes(MemoryPackSerializer.Serialize(value.Value));
+        WriteSerializedValue(value.Value);
     }
 
     public void WriteDecimalValue(string? key, decimal? value)
@@ -155,7 +156,7 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         WriteKey(key);
         if (value is null) { WriteTag(ValueTag.Null); return; }
         WriteTag(ValueTag.Bytes);
-        WriteRawBytes(MemoryPackSerializer.Serialize(value));
+        WriteSerializedValue(value);
     }
 
     public void WriteNullValue(string? key)
@@ -169,7 +170,8 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         WriteKey(key);
         if (value is null) { WriteTag(ValueTag.Null); return; }
         WriteTag(ValueTag.Long);
-        WriteRawBytes(MemoryPackSerializer.Serialize(Convert.ToInt64(value.Value)));
+        var enumValue = Convert.ToInt64(value.Value);
+        WriteSerializedValue(enumValue);
     }
 
     public void WriteObjectValue<T>(string? key, T? value, params IParsable?[] additionalValuesToMerge)
@@ -204,7 +206,7 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         // Write: key (if any), Tag.Map, property count, then the buffered bytes.
         WriteKey(key);
         WriteTag(ValueTag.Map);
-        WriteRawBytes(MemoryPackSerializer.Serialize(tempWriter._propertyCount));
+        WriteSerializedValue(tempWriter._propertyCount);
         WriteRawBytes(tempBuf.WrittenSpan);
     }
 
@@ -219,24 +221,23 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
             return;
         }
 
-        // Serialize each object into its own temp buffer to capture property counts.
-        var serialized = new List<(int PropertyCount, ReadOnlyMemory<byte> Bytes)>();
+        WriteTag(ValueTag.Array);
+        if (!values.TryGetNonEnumeratedCount(out var count))
+        {
+            values = values.ToList();
+            count = values.Count();
+        }
+
+        WriteSerializedValue(count);
+
         foreach (var item in values)
         {
             var tempBuf = new ArrayBufferWriter<byte>();
             var tempWriter = CreateChildWriter(tempBuf);
             item?.Serialize(tempWriter);
-            serialized.Add((tempWriter._propertyCount, tempBuf.WrittenMemory));
-        }
-
-        WriteTag(ValueTag.Array);
-        WriteRawBytes(MemoryPackSerializer.Serialize(serialized.Count));
-
-        foreach (var (propCount, bytes) in serialized)
-        {
             WriteTag(ValueTag.Map);
-            WriteRawBytes(MemoryPackSerializer.Serialize(propCount));
-            WriteRawBytes(bytes.Span);
+            WriteSerializedValue(tempWriter._propertyCount);
+            WriteRawBytes(tempBuf.WrittenSpan);
         }
     }
 
@@ -250,10 +251,16 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
             return;
         }
 
-        var list = values.ToList();
         WriteTag(ValueTag.Array);
-        WriteRawBytes(MemoryPackSerializer.Serialize(list.Count));
-        foreach (var item in list)
+
+        if (!values.TryGetNonEnumeratedCount(out var count))
+        {
+            values = values.ToList();
+            count = values.Count();
+        }
+
+        WriteSerializedValue(count);
+        foreach (var item in values)
             WriteAnyValue(null, (object?)item);
     }
 
@@ -268,18 +275,25 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
             return;
         }
 
-        var list = values.ToList();
         WriteTag(ValueTag.Array);
-        WriteRawBytes(MemoryPackSerializer.Serialize(list.Count));
 
-        foreach (var item in list)
+        if (!values.TryGetNonEnumeratedCount(out var count))
+        {
+            values = values.ToList();
+            count = values.Count();
+        }
+
+        WriteSerializedValue(count);
+
+        foreach (var item in values)
         {
             if (!item.HasValue)
                 WriteTag(ValueTag.Null);
             else
             {
                 WriteTag(ValueTag.Long);
-                WriteRawBytes(MemoryPackSerializer.Serialize(Convert.ToInt64(item.Value)));
+                var enumValue = Convert.ToInt64(item.Value);
+                WriteSerializedValue(enumValue);
             }
         }
     }
@@ -306,8 +320,7 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
     private void WriteKey(string? key)
     {
         if (key is null) return;
-        var bytes = MemoryPackSerializer.Serialize(key);
-        WriteRawBytes(bytes);
+        WriteSerializedValue(key);
         _propertyCount++;
     }
 
@@ -317,6 +330,12 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         var dest = outputBuffer.GetSpan(bytes.Length);
         bytes.CopyTo(dest);
         outputBuffer.Advance(bytes.Length);
+    }
+
+    private void WriteSerializedValue<T>(T value)
+    {
+        var destination = outputBuffer;
+        MemoryPackSerializer.Serialize<T, IBufferWriter<byte>>(in destination, in value);
     }
 
     private MemoryPackSerializationWriter CreateChildWriter(IBufferWriter<byte> buffer) => new(buffer)
@@ -363,16 +382,23 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
                         tempWriter.WriteAnyValue(k, v);
                     WriteKey(key);
                     WriteTag(ValueTag.Map);
-                    WriteRawBytes(MemoryPackSerializer.Serialize(tempWriter._propertyCount));
+                    WriteSerializedValue(tempWriter._propertyCount);
                     WriteRawBytes(tempBuf.WrittenSpan);
                     break;
                 }
             case UntypedArray uarr:
                 {
-                    var items = uarr.GetValue().ToList();
+                    var items = uarr.GetValue();
                     WriteKey(key);
                     WriteTag(ValueTag.Array);
-                    WriteRawBytes(MemoryPackSerializer.Serialize(items.Count));
+
+                    if (!items.TryGetNonEnumeratedCount(out var count))
+                    {
+                        items = items.ToList();
+                        count = items.Count();
+                    }
+
+                    WriteSerializedValue(count);
                     foreach (var item in items)
                         WriteAnyValue(null, item);
                     break;

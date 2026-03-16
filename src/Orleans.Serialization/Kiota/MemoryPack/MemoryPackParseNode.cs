@@ -1,6 +1,7 @@
 using MemoryPack;
 using Microsoft.Kiota.Abstractions;
 using Microsoft.Kiota.Abstractions.Serialization;
+using System.Buffers;
 using System.Globalization;
 
 namespace Orleans.Serialization;
@@ -28,9 +29,36 @@ internal class MemoryPackParseNode : IParseNode
         _value = value;
     }
 
+    public MemoryPackParseNode(ReadOnlySequence<byte> sequence)
+    {
+        var span = GetContiguousSpan(sequence, out var owner);
+        try
+        {
+            var (value, _) = ReadTaggedValue(span);
+            _value = value;
+        }
+        finally
+        {
+            owner?.Dispose();
+        }
+    }
+
     private MemoryPackParseNode(object? value)
     {
         _value = value;
+    }
+
+    private static ReadOnlySpan<byte> GetContiguousSpan(ReadOnlySequence<byte> sequence, out IMemoryOwner<byte>? owner)
+    {
+        if (sequence.IsSingleSegment)
+        {
+            owner = null;
+            return sequence.FirstSpan;
+        }
+
+        owner = MemoryPool<byte>.Shared.Rent((int)sequence.Length);
+        sequence.CopyTo(owner.Memory.Span);
+        return owner.Memory.Span[..(int)sequence.Length];
     }
 
     private static (object? Value, int Consumed) ReadTaggedValue(ReadOnlySpan<byte> span)

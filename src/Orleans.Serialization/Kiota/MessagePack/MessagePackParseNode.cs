@@ -28,6 +28,12 @@ internal class MessagePackParseNode : IParseNode
         _value = ReadValue(ref reader);
     }
 
+    public MessagePackParseNode(ReadOnlySequence<byte> sequence)
+    {
+        var reader = new MessagePackReader(sequence);
+        _value = ReadValue(ref reader);
+    }
+
     private MessagePackParseNode(object? value)
     {
         _value = value;

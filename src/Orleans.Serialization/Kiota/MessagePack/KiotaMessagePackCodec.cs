@@ -160,7 +160,7 @@ public sealed class KiotaMessagePackCodec(IOptions<KiotaMessagePackOptions>? opt
                             }
                             else
                             {
-                                parseNode = new MessagePackParseNode(tempBuffer.ToArray());
+                                parseNode = new MessagePackParseNode(tempBuffer.AsReadOnlySequence());
                             }
                         }
                         else if (Nullable.GetUnderlyingType(type) is null)
@@ -210,7 +210,7 @@ public sealed class KiotaMessagePackCodec(IOptions<KiotaMessagePackOptions>? opt
             using (var kiotaWriter = new MessagePackSerializationWriter(bufferWriter))
                 kiotaWriter.WriteObjectValue(null, parsable);
 
-            var node = new MessagePackParseNode(bufferWriter.Value.ToArray());
+            var node = new MessagePackParseNode(bufferWriter.Value.AsReadOnlySequence());
             result = node.GetObjectValue(ParsableFactoryHelper.Create(type))
                 ?? throw new InvalidOperationException($"Deep copy returned null for type '{type.FullName}'.");
         }

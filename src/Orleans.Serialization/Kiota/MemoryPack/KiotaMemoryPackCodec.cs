@@ -7,7 +7,6 @@ using Orleans.Serialization.Codecs;
 using Orleans.Serialization.Serializers;
 using Orleans.Serialization.WireProtocol;
 using System.Buffers;
-using System.Collections.Concurrent;
 using System.Text;
 
 namespace Orleans.Serialization;
@@ -33,9 +32,6 @@ public sealed class KiotaMemoryPackCodec(IOptions<KiotaMemoryPackOptions>? optio
     /// The well-known type alias for this codec.
     /// </summary>
     public const string WellKnownAlias = "kiota-mempack";
-
-    // Cached factory delegates keyed by concrete Kiota model type.
-    private static readonly ConcurrentDictionary<Type, ParsableFactory<IParsable>> _factoryCache = new();
 
     /// <inheritdoc/>
     public bool? IsTypeAllowed(Type type) => IsSupportedType(type) ? true : null;
@@ -163,7 +159,7 @@ public sealed class KiotaMemoryPackCodec(IOptions<KiotaMemoryPackOptions>? optio
                             }
                             else
                             {
-                                parseNode = new MemoryPackParseNode(tempBuffer.ToArray());
+                                parseNode = new MemoryPackParseNode(tempBuffer.AsReadOnlySequence());
                             }
                         }
                         else if (Nullable.GetUnderlyingType(type) is null)
@@ -213,7 +209,7 @@ public sealed class KiotaMemoryPackCodec(IOptions<KiotaMemoryPackOptions>? optio
             using (var kiotaWriter = new MemoryPackSerializationWriter(bufferWriter))
                 kiotaWriter.WriteObjectValue(null, parsable);
 
-            var node = new MemoryPackParseNode(bufferWriter.Value.ToArray());
+            var node = new MemoryPackParseNode(bufferWriter.Value.AsReadOnlySequence());
             result = node.GetObjectValue(ParsableFactoryHelper.Create(type))
                 ?? throw new InvalidOperationException($"Deep copy returned null for type '{type.FullName}'.");
         }

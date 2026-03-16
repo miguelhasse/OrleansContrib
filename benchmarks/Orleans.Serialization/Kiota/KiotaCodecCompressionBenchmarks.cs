@@ -1,30 +1,42 @@
 using BenchmarkDotNet.Attributes;
+using Microsoft.Kiota.Abstractions.Serialization;
 using Orleans.Serialization.Kiota.Testing;
 
 namespace Orleans.Serialization.Kiota.Benchmarks;
 
 [MemoryDiagnoser]
+[Config(typeof(KiotaCompressionBenchmarkConfig))]
 public class KiotaCodecCompressionBenchmarks
 {
-    private KiotaCodecHarness? _harness;
-    private object _value = default!;
+    private KiotaCodecHarness? _compressedHarness;
+    private KiotaCodecHarness? _uncompressedHarness;
+    private IParsable _value = default!;
 
     [ParamsAllValues]
     public KiotaCodecKind CodecKind { get; set; }
 
-    [Params(false, true)]
-    public bool Compression { get; set; }
+    [ParamsAllValues]
+    public GraphEntityKind EntityKind { get; set; }
 
     [GlobalSetup]
     public void Setup()
     {
-        _harness = KiotaCodecHarnessFactory.Create(CodecKind, Compression);
-        _value = GraphEntitySamples.Create(GraphEntityKind.Message);
+        _compressedHarness = KiotaCodecHarnessFactory.Create(CodecKind, compression: true);
+        _uncompressedHarness = KiotaCodecHarnessFactory.Create(CodecKind, compression: false);
+        _value = GraphEntitySamples.Create(EntityKind);
+        _ = CompressionMetricsCache.Get(CodecKind, EntityKind);
     }
 
     [GlobalCleanup]
-    public void Cleanup() => _harness?.Dispose();
+    public void Cleanup()
+    {
+        _compressedHarness?.Dispose();
+        _uncompressedHarness?.Dispose();
+    }
 
     [Benchmark]
-    public byte[] SerializeLargeMessagePayload() => _harness!.ObjectSerializer.SerializeToArray(_value);
+    public byte[] SerializeUncompressed() => _uncompressedHarness!.ObjectSerializer.SerializeToArray(_value);
+
+    [Benchmark]
+    public byte[] SerializeCompressed() => _compressedHarness!.ObjectSerializer.SerializeToArray(_value);
 }

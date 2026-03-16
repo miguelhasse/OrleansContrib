@@ -19,6 +19,7 @@ The test suite currently covers:
 - Orleans object serializer round-trips for representative Microsoft Graph payloads
 - deep-copy behavior for Kiota `IParsable` models
 - `KiotaTestModel` round-trip and deep-copy coverage
+- `KiotaCollectionTestModel` coverage for primitive, object, enum, and empty collections
 - `Microsoft.Orleans.Serialization.TestKit` copier smoke tests where it adds value
 
 ## Graph sample set
@@ -30,9 +31,17 @@ The Graph-based tests use nested, deterministic samples defined in `KiotaCodecTe
 - `Event`
 - `Group`
 - `Contact`
+- `DriveItem`
 - `Team`
 
-The samples intentionally favor deeper but stable relations such as managers, owners, reply-to recipients, additional locations, contact addresses, and team settings.
+The samples intentionally favor deeper but stable relations such as managers, owners, reply-to recipients, additional locations, nested drive items, contact addresses, and team settings.
+
+Collection-focused tests concentrate on entity shapes that naturally stress list/object collections, such as:
+
+- `User`
+- `Message`
+- `Group`
+- `Contact`
 
 ## Run tests
 

@@ -10,7 +10,7 @@ This repository currently contains Orleans serializers for Kiota `IParsable` mod
 - `MessagePack`
 - `MemoryPack`
 
-The repository also includes a dedicated xUnit v3 test project and a BenchmarkDotNet benchmark project that exercise the three codecs with compression disabled and enabled.
+The repository also includes a dedicated xUnit v3 test project and a BenchmarkDotNet benchmark project that exercise the three codecs with compression disabled and enabled across multiple Graph entity shapes.
 
 ## Projects
 
@@ -19,8 +19,8 @@ The repository also includes a dedicated xUnit v3 test project and a BenchmarkDo
 | `src\Orleans.Serialization\Kiota\SystemTextJson` | Orleans Kiota codec backed by `System.Text.Json`. |
 | `src\Orleans.Serialization\Kiota\MessagePack` | Orleans Kiota codec backed by MessagePack. |
 | `src\Orleans.Serialization\Kiota\MemoryPack` | Orleans Kiota codec backed by MemoryPack. |
-| `tests\Orleans.Serialization\Kiota` | xUnit v3 coverage for codec round-trips, deep-copy behavior, and sample Graph payloads. |
-| `benchmarks\Orleans.Serialization\Kiota` | BenchmarkDotNet performance and compression measurements for the supported codecs. |
+| `tests\Orleans.Serialization\Kiota` | xUnit v3 coverage for codec round-trips, deep-copy behavior, collection-focused test models, and sample Graph payloads. |
+| `benchmarks\Orleans.Serialization\Kiota` | BenchmarkDotNet performance and compression measurements for the supported codecs across Graph entity kinds. |
 
 ## Solution contents
 
@@ -66,16 +66,24 @@ Environment:
 - Windows 11 / .NET SDK `10.0.200`
 - Intel Core i9-10900
 
-`KiotaCodecCompressionBenchmarks` (`SerializeLargeMessagePayload`):
+The expanded `KiotaCodecCompressionBenchmarks` now compares:
 
-| Compression | Codec | Mean | Allocated |
-|---|---|---:|---:|
-| Disabled | Json | 7.154 us | 3.66 KB |
-| Disabled | MessagePack | 8.476 us | 19.94 KB |
-| Disabled | MemoryPack | 10.350 us | 27.91 KB |
-| Enabled | Json | 52.257 us | 1.45 KB |
-| Enabled | MessagePack | 69.028 us | 17.61 KB |
-| Enabled | MemoryPack | 89.140 us | 25.09 KB |
+- codec types
+- Graph entity kinds
+- compressed vs. uncompressed payload sizes
+- compression ratio
+- mean execution time
+- memory allocation
+
+Short-run `SerializeCompressed` examples from the latest generated report:
+
+| Codec | Entity | Mean | Uncompressed | Compressed | Ratio | Allocated |
+|---|---|---:|---:|---:|---:|---:|
+| Json | Message | 61.41 us | 3411 B | 684 B | 79.95% | 1.66 KB |
+| MessagePack | Team | 217.14 us | 10044 B | 2257 B | 77.53% | 79.7 KB |
+| MemoryPack | DriveItem | 127.22 us | 6384 B | 1068 B | 83.27% | 45.21 KB |
+
+The generated BenchmarkDotNet report now includes `Uncompressed Bytes`, `Compressed Bytes`, and `Compression Ratio` columns to make codec and entity comparisons easier to scan.
 
 ## Documentation
 

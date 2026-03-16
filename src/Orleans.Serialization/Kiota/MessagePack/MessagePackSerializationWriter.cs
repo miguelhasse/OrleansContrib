@@ -3,6 +3,7 @@ using Microsoft.Kiota.Abstractions;
 using Microsoft.Kiota.Abstractions.Serialization;
 using System.Buffers;
 using System.Globalization;
+using System.Linq;
 
 namespace Orleans.Serialization;
 
@@ -237,25 +238,24 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
             return;
         }
 
-        // Serialize each object into its own temp buffer to capture property counts.
-        var serialized = new List<(int PropertyCount, ReadOnlyMemory<byte> Bytes)>();
+        var w = new MessagePackWriter(outputBuffer);
+        if (!values.TryGetNonEnumeratedCount(out var count))
+        {
+            values = values.ToList();
+            count = values.Count();
+        }
+
+        w.WriteArrayHeader(count);
 
         foreach (var item in values)
         {
             var tempBuf = new ArrayBufferWriter<byte>();
             var tempWriter = CreateChildWriter(tempBuf);
             item?.Serialize(tempWriter);
-            serialized.Add((tempWriter._propertyCount, tempBuf.WrittenMemory));
+            w.WriteMapHeader(tempWriter._propertyCount);
+            w.WriteRaw(tempBuf.WrittenSpan);
         }
 
-        var w = new MessagePackWriter(outputBuffer);
-        w.WriteArrayHeader(serialized.Count);
-
-        foreach (var (propCount, bytes) in serialized)
-        {
-            w.WriteMapHeader(propCount);
-            w.WriteRaw(bytes.Span);
-        }
         w.Flush();
     }
 
@@ -269,10 +269,16 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
             return;
         }
 
-        var list = values.ToList();
         var w = new MessagePackWriter(outputBuffer);
-        w.WriteArrayHeader(list.Count);
-        foreach (var item in list)
+
+        if (!values.TryGetNonEnumeratedCount(out var count))
+        {
+            values = values.ToList();
+            count = values.Count();
+        }
+
+        w.WriteArrayHeader(count);
+        foreach (var item in values)
             WriteBoxedPrimitive(ref w, (object?)item);
         w.Flush();
     }
@@ -287,11 +293,17 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
             return;
         }
 
-        var list = values.ToList();
         var w = new MessagePackWriter(outputBuffer);
-        w.WriteArrayHeader(list.Count);
 
-        foreach (var item in list)
+        if (!values.TryGetNonEnumeratedCount(out var count))
+        {
+            values = values.ToList();
+            count = values.Count();
+        }
+
+        w.WriteArrayHeader(count);
+
+        foreach (var item in values)
         {
             if (!item.HasValue) w.WriteNil();
             else w.Write(Convert.ToInt64(item.Value));
@@ -415,13 +427,20 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
                 }
             case UntypedArray uarr:
                 {
-                    var items = uarr.GetValue().ToList();
+                    var items = uarr.GetValue();
                     WriteKey(key);
                     var w = new MessagePackWriter(outputBuffer);
-                    w.WriteArrayHeader(items.Count);
-                    w.Flush();
+
+                    if (!items.TryGetNonEnumeratedCount(out var count))
+                    {
+                        items = items.ToList();
+                        count = items.Count();
+                    }
+
+                    w.WriteArrayHeader(count);
                     foreach (var item in items)
                         WriteAnyValue(null, item);
+                    w.Flush();
                     break;
                 }
             case IParsable parsable:
