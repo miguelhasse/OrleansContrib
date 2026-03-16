@@ -2,6 +2,7 @@ using MessagePack;
 using Microsoft.Kiota.Abstractions;
 using Microsoft.Kiota.Abstractions.Serialization;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Globalization;
 
@@ -12,10 +13,11 @@ namespace Orleans.Serialization;
 /// into a caller-supplied <see cref="IBufferWriter{Byte}"/>.
 /// </summary>
 /// <remarks>
-/// Objects are encoded as MessagePack maps with string keys.
+/// Objects are encoded as MessagePack maps with compact integer keys for known
+/// typed properties and string keys for fallback/additional properties.
 /// Collections become MessagePack arrays.
-/// Scalar types map to their native MessagePack equivalents; types without a
-/// native equivalent (decimal, Guid, DateTimeOffset, …) are encoded as strings.
+/// Scalar types map to their native MessagePack equivalents where possible.
+/// Compact custom encodings are used for values without direct native support.
 /// Enums are encoded as their underlying integer value.
 ///
 /// <para>
@@ -35,6 +37,7 @@ namespace Orleans.Serialization;
 internal class MessagePackSerializationWriter : ISerializationWriter
 {
     private readonly IBufferWriter<byte> _outputBuffer;
+    private readonly ParsablePropertyKeyMap? _propertyKeyMap;
     private static readonly ConcurrentStack<ArrayBufferWriter<byte>> s_tempBufferPool = new();
 
     // Counts the number of top-level key-value pairs written to outputBuffer.
@@ -43,8 +46,14 @@ internal class MessagePackSerializationWriter : ISerializationWriter
     private int _propertyCount;
 
     public MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer)
+        : this(outputBuffer, propertyKeyMap: null)
+    {
+    }
+
+    private MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer, ParsablePropertyKeyMap? propertyKeyMap)
     {
         _outputBuffer = outputBuffer;
+        _propertyKeyMap = propertyKeyMap;
     }
 
     public Action<IParsable>? OnBeforeObjectSerialization { get; set; }
@@ -127,11 +136,10 @@ internal class MessagePackSerializationWriter : ISerializationWriter
 
     public void WriteDecimalValue(string? key, decimal? value)
     {
-        // Decimal has no native MessagePack type; use string to preserve precision.
         WriteKey(key);
         var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil();
-        else w.Write(value.Value.ToString(CultureInfo.InvariantCulture));
+        else WriteDecimal(ref w, value.Value);
         w.Flush();
     }
 
@@ -139,7 +147,8 @@ internal class MessagePackSerializationWriter : ISerializationWriter
     {
         WriteKey(key);
         var w = new MessagePackWriter(_outputBuffer);
-        if (value is null) w.WriteNil(); else w.Write(value.Value.ToString());
+        if (value is null) w.WriteNil();
+        else WriteGuid(ref w, value.Value);
         w.Flush();
     }
 
@@ -148,7 +157,7 @@ internal class MessagePackSerializationWriter : ISerializationWriter
         WriteKey(key);
         var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil();
-        else w.Write(value.Value.ToString("o", CultureInfo.InvariantCulture));
+        else WriteDateTimeOffset(ref w, value.Value);
         w.Flush();
     }
 
@@ -157,7 +166,7 @@ internal class MessagePackSerializationWriter : ISerializationWriter
         WriteKey(key);
         var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil();
-        else w.Write(value.Value.ToString("c", CultureInfo.InvariantCulture));
+        else w.Write(value.Value.Ticks);
         w.Flush();
     }
 
@@ -211,6 +220,7 @@ internal class MessagePackSerializationWriter : ISerializationWriter
 
         WriteBufferedMap(
             key,
+            value is null ? null : ParsablePropertyKeyMap.For(value.GetType()),
             tempWriter =>
             {
                 if (value is not null)
@@ -250,7 +260,10 @@ internal class MessagePackSerializationWriter : ISerializationWriter
         w.Flush();
 
         foreach (var item in values)
-            WriteBufferedMap(null, tempWriter => item?.Serialize(tempWriter));
+            WriteBufferedMap(
+                null,
+                item is null ? null : ParsablePropertyKeyMap.For(item.GetType()),
+                tempWriter => item?.Serialize(tempWriter));
     }
 
     public void WriteCollectionOfPrimitiveValues<T>(string? key, IEnumerable<T>? values)
@@ -314,14 +327,22 @@ internal class MessagePackSerializationWriter : ISerializationWriter
     public void Dispose() => GC.SuppressFinalize(this);
 
     /// <summary>
-    /// If <paramref name="key"/> is non-null, writes the string key to
-    /// <see cref="outputBuffer"/> and increments <see cref="_propertyCount"/>.
+    /// If <paramref name="key"/> is non-null, writes the compact integer key
+    /// for known typed properties or the original string key as fallback, then
+    /// increments <see cref="_propertyCount"/>.
     /// </summary>
     private void WriteKey(string? key)
     {
         if (key is null) return;
         var w = new MessagePackWriter(_outputBuffer);
-        w.Write(key);
+        if (_propertyKeyMap?.TryGetId(key, out var id) == true)
+        {
+            w.Write(id);
+        }
+        else
+        {
+            w.Write(key);
+        }
         w.Flush();
         _propertyCount++;
     }
@@ -353,10 +374,11 @@ internal class MessagePackSerializationWriter : ISerializationWriter
             case long l: w.Write(l); break;
             case float f: w.Write(f); break;
             case double d: w.Write(d); break;
-            case decimal dec: w.Write(dec.ToString(CultureInfo.InvariantCulture)); break;
-            case Guid g: w.Write(g.ToString()); break;
-            case DateTimeOffset dto: w.Write(dto.ToString("o", CultureInfo.InvariantCulture)); break;
-            case TimeSpan ts: w.Write(ts.ToString("c", CultureInfo.InvariantCulture)); break;
+            case decimal dec: WriteDecimal(ref w, dec); break;
+            case Guid g: WriteGuid(ref w, g); break;
+            case DateTimeOffset dto: WriteDateTimeOffset(ref w, dto); break;
+            case TimeSpan ts: w.Write(ts.Ticks); break;
+            case DateTime dt: w.Write(dt); break;
             case Date date: w.Write(date.ToString()); break;
             case Time time: w.Write(time.ToString()); break;
             case byte[] bytes: w.Write(bytes.AsSpan()); break;
@@ -368,12 +390,12 @@ internal class MessagePackSerializationWriter : ISerializationWriter
     /// Creates a child writer that inherits the serialization lifecycle callbacks,
     /// used to serialize nested objects into a temporary buffer.
     /// </summary>
-    private void WriteBufferedMap(string? key, Action<MessagePackSerializationWriter> writeProperties)
+    private void WriteBufferedMap(string? key, ParsablePropertyKeyMap? propertyKeyMap, Action<MessagePackSerializationWriter> writeProperties)
     {
         var tempBuffer = RentTempBuffer();
         try
         {
-            var tempWriter = CreateChildWriter(tempBuffer);
+            var tempWriter = CreateChildWriter(tempBuffer, propertyKeyMap);
             writeProperties(tempWriter);
 
             WriteKey(key);
@@ -397,12 +419,38 @@ internal class MessagePackSerializationWriter : ISerializationWriter
         s_tempBufferPool.Push(tempBuffer);
     }
 
-    private MessagePackSerializationWriter CreateChildWriter(IBufferWriter<byte> buffer) => new(buffer)
+    private MessagePackSerializationWriter CreateChildWriter(IBufferWriter<byte> buffer, ParsablePropertyKeyMap? propertyKeyMap) => new(buffer, propertyKeyMap)
     {
         OnBeforeObjectSerialization = OnBeforeObjectSerialization,
         OnAfterObjectSerialization = OnAfterObjectSerialization,
         OnStartObjectSerialization = OnStartObjectSerialization,
     };
+
+    private static void WriteDecimal(ref MessagePackWriter writer, decimal value)
+    {
+        var bytes = new byte[16];
+        var bits = decimal.GetBits(value);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(0, 4), bits[0]);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(4, 4), bits[1]);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(8, 4), bits[2]);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(12, 4), bits[3]);
+        writer.Write(bytes);
+    }
+
+    private static void WriteGuid(ref MessagePackWriter writer, Guid value)
+    {
+        var bytes = new byte[16];
+        value.TryWriteBytes(bytes);
+        writer.WriteExtensionFormat(new ExtensionResult(MessagePackExtensionTypeCodes.Guid, bytes));
+    }
+
+    private static void WriteDateTimeOffset(ref MessagePackWriter writer, DateTimeOffset value)
+    {
+        var bytes = new byte[10];
+        BinaryPrimitives.WriteInt64LittleEndian(bytes.AsSpan(0, 8), value.UtcTicks);
+        BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(8, 2), checked((short)value.Offset.TotalMinutes));
+        writer.WriteExtensionFormat(new ExtensionResult(MessagePackExtensionTypeCodes.DateTimeOffset, bytes));
+    }
 
     private void WriteAnyValue(string? key, object? value)
     {
@@ -439,6 +487,7 @@ internal class MessagePackSerializationWriter : ISerializationWriter
                 {
                     WriteBufferedMap(
                         key,
+                        propertyKeyMap: null,
                         tempWriter =>
                         {
                             foreach (var (k, v) in uobj.GetValue())
@@ -517,5 +566,11 @@ internal class MessagePackSerializationWriter : ISerializationWriter
                 break;
         }
     }
+}
+
+internal static class MessagePackExtensionTypeCodes
+{
+    public const sbyte Guid = 1;
+    public const sbyte DateTimeOffset = 2;
 }
 

@@ -2,6 +2,7 @@ using MessagePack;
 using Microsoft.Kiota.Abstractions;
 using Microsoft.Kiota.Abstractions.Serialization;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Globalization;
 
 namespace Orleans.Serialization;
@@ -11,12 +12,13 @@ namespace Orleans.Serialization;
 /// </summary>
 /// <remarks>
 /// The raw MessagePack bytes are decoded into an in-memory object tree on construction:
-/// maps become <see cref="Dictionary{String,Object}"/>, arrays become <see cref="List{Object}"/>,
+/// maps become <see cref="MessagePackObjectMap"/>, arrays become <see cref="List{Object}"/>,
 /// and scalars are their natural .NET equivalents.
 /// </remarks>
 internal class MessagePackParseNode : IParseNode
 {
     private readonly object? _value;
+    private readonly ParsablePropertyKeyMap? _propertyKeyMap;
 
     public Action<IParsable>? OnBeforeAssignFieldValues { get; set; }
 
@@ -34,9 +36,10 @@ internal class MessagePackParseNode : IParseNode
         _value = ReadValue(ref reader);
     }
 
-    private MessagePackParseNode(object? value)
+    private MessagePackParseNode(object? value, ParsablePropertyKeyMap? propertyKeyMap = null)
     {
         _value = value;
+        _propertyKeyMap = propertyKeyMap;
     }
 
     private static object? ReadValue(ref MessagePackReader reader)
@@ -84,23 +87,51 @@ internal class MessagePackParseNode : IParseNode
         return list;
     }
 
-    private static Dictionary<string, object?> ReadMap(ref MessagePackReader reader)
+    private static MessagePackObjectMap ReadMap(ref MessagePackReader reader)
     {
         var count = reader.ReadMapHeader();
-        var dict = new Dictionary<string, object?>(count, StringComparer.Ordinal);
+        var map = new MessagePackObjectMap(count);
         for (var i = 0; i < count; i++)
         {
-            var key = reader.ReadString()
-                      ?? throw new InvalidOperationException("MessagePack map key cannot be null.");
-            dict[key] = ReadValue(ref reader);
+            switch (reader.NextMessagePackType)
+            {
+                case MessagePackType.String:
+                    var stringKey = reader.ReadString()
+                        ?? throw new InvalidOperationException("MessagePack map key cannot be null.");
+                    map.StringEntries[stringKey] = ReadValue(ref reader);
+                    break;
+                case MessagePackType.Integer:
+                    var integerKey = ReadMapKeyId(ref reader);
+                    map.IntegerEntries[integerKey] = ReadValue(ref reader);
+                    break;
+                default:
+                    throw new InvalidOperationException($"Unexpected MessagePack map key type: {reader.NextMessagePackType}");
+            }
         }
-        return dict;
+        return map;
+    }
+
+    private static int ReadMapKeyId(ref MessagePackReader reader)
+    {
+        var raw = ReadInteger(ref reader);
+        return raw is long value && value is >= 0 and <= int.MaxValue
+            ? (int)value
+            : throw new InvalidOperationException("MessagePack integer map key must fit in a non-negative Int32.");
     }
 
     private static object? ReadExtension(ref MessagePackReader reader)
     {
-        reader.ReadExtensionFormat(); // skip unknown extensions
-        return null;
+        var header = reader.ReadExtensionFormatHeader();
+        if (header.TypeCode == -1)
+            return reader.ReadDateTime(header);
+
+        var data = reader.ReadRaw(header.Length);
+        return header.TypeCode switch
+        {
+            MessagePackExtensionTypeCodes.Guid => ReadGuidExtension(data),
+            MessagePackExtensionTypeCodes.DateTimeOffset => ReadDateTimeOffsetExtension(data),
+            _ => null,
+        };
     }
 
     public string? GetStringValue() => _value as string;
@@ -121,6 +152,8 @@ internal class MessagePackParseNode : IParseNode
 
     public decimal? GetDecimalValue()
     {
+        if (_value is byte[] bytes && TryReadDecimal(bytes, out var decimalValue))
+            return decimalValue;
         if (_value is string s)
             return decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var r) ? r : null;
         if (_value is double d)
@@ -129,14 +162,24 @@ internal class MessagePackParseNode : IParseNode
     }
 
     public Guid? GetGuidValue()
-        => _value is string s && Guid.TryParse(s, out var g) ? g : null;
+        => _value switch
+        {
+            Guid g => g,
+            byte[] { Length: 16 } bytes => new Guid(bytes),
+            string s when Guid.TryParse(s, out var g) => g,
+            _ => null,
+        };
 
     public DateTimeOffset? GetDateTimeOffsetValue()
-        => _value is string s && DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture,
-               DateTimeStyles.RoundtripKind, out var dt) ? dt : null;
+        => TryGetDateTimeOffset(_value, out var result) ? result : null;
 
     public TimeSpan? GetTimeSpanValue()
-        => _value is string s && TimeSpan.TryParse(s, CultureInfo.InvariantCulture, out var ts) ? ts : null;
+        => _value switch
+        {
+            long ticks => TimeSpan.FromTicks(ticks),
+            string s when TimeSpan.TryParse(s, CultureInfo.InvariantCulture, out var ts) => ts,
+            _ => null,
+        };
 
     public Date? GetDateValue()
     {
@@ -158,31 +201,53 @@ internal class MessagePackParseNode : IParseNode
 
     public IParseNode? GetChildNode(string identifier)
     {
-        if (_value is Dictionary<string, object?> dict &&
-            dict.TryGetValue(identifier, out var child))
-            return new MessagePackParseNode(child);
+        if (_value is MessagePackObjectMap map)
+        {
+            if (map.StringEntries.TryGetValue(identifier, out var child))
+                return new MessagePackParseNode(child);
+
+            if (_propertyKeyMap?.TryGetId(identifier, out var keyId) == true &&
+                map.IntegerEntries.TryGetValue(keyId, out child))
+            {
+                return new MessagePackParseNode(child);
+            }
+        }
+
         return null;
     }
 
     public T GetObjectValue<T>(ParsableFactory<T> factory) where T : IParsable
     {
         if (_value is null) return default!;
-        var item = factory(this);
-        OnBeforeAssignFieldValues?.Invoke(item);
-        AssignFieldValues(item);
-        OnAfterAssignFieldValues?.Invoke(item);
+        var typedNode = CreateTypedNode(typeof(T));
+        var item = factory(typedNode);
+        typedNode.OnBeforeAssignFieldValues?.Invoke(item);
+        typedNode.AssignFieldValues(item);
+        typedNode.OnAfterAssignFieldValues?.Invoke(item);
+        return item;
+    }
+
+    internal IParsable GetObjectValue(ParsableFactory<IParsable> factory, Type declaredType)
+    {
+        if (_value is null) return default!;
+        var typedNode = CreateTypedNode(declaredType);
+        var item = factory(typedNode);
+        typedNode.OnBeforeAssignFieldValues?.Invoke(item);
+        typedNode.AssignFieldValues(item);
+        typedNode.OnAfterAssignFieldValues?.Invoke(item);
         return item;
     }
 
     private void AssignFieldValues<T>(T item) where T : IParsable
     {
-        if (_value is not Dictionary<string, object?> dict)
+        if (_value is not MessagePackObjectMap map)
             return;
 
         var deserializers = item.GetFieldDeserializers();
         var additionalData = (item as IAdditionalDataHolder)?.AdditionalData;
+        var propertyKeyMap = ParsablePropertyKeyMap.For(item.GetType());
 
-        foreach (var (key, val) in dict)
+        foreach (var (key, val) in map.StringEntries)
         {
             var childNode = new MessagePackParseNode(val);
             if (deserializers.TryGetValue(key, out var deserializer))
@@ -190,7 +255,31 @@ internal class MessagePackParseNode : IParseNode
             else
                 additionalData?.TryAdd(key, val!);
         }
+
+        foreach (var (keyId, val) in map.IntegerEntries)
+        {
+            if (!propertyKeyMap.TryGetKey(keyId, out var key) || key is null)
+            {
+                throw new InvalidOperationException($"Unknown MessagePack property key id '{keyId}' for type '{item.GetType().FullName}'.");
+            }
+
+            var childNode = new MessagePackParseNode(val);
+            if (deserializers.TryGetValue(key, out var deserializer))
+            {
+                deserializer(childNode);
+            }
+            else
+            {
+                additionalData?.TryAdd(key, val!);
+            }
+        }
     }
+
+    private MessagePackParseNode CreateTypedNode(Type type) => new(_value, ParsablePropertyKeyMap.For(type))
+    {
+        OnBeforeAssignFieldValues = OnBeforeAssignFieldValues,
+        OnAfterAssignFieldValues = OnAfterAssignFieldValues,
+    };
 
     public IEnumerable<T> GetCollectionOfObjectValues<T>(ParsableFactory<T> factory)
         where T : IParsable
@@ -296,6 +385,8 @@ internal class MessagePackParseNode : IParseNode
                 return item is double dd ? (T?)(object?)dd : default;
             if (targetType == typeof(decimal))
             {
+                if (item is byte[] decimalBytes && TryReadDecimal(decimalBytes, out var decimalValue))
+                    return (T?)(object?)decimalValue;
                 if (item is string sd)
                     return decimal.TryParse(sd, NumberStyles.Any,
                                CultureInfo.InvariantCulture, out var r)
@@ -305,17 +396,28 @@ internal class MessagePackParseNode : IParseNode
                 return default;
             }
             if (targetType == typeof(Guid))
+            {
+                if (item is Guid guid)
+                    return (T?)(object?)guid;
+                if (item is byte[] { Length: 16 } guidBytes)
+                    return (T?)(object?)new Guid(guidBytes);
                 return item is string sg && Guid.TryParse(sg, out var g)
-                       ? (T?)(object?)g : default;
+                    ? (T?)(object?)g : default;
+            }
             if (targetType == typeof(DateTimeOffset))
-                return item is string sdto &&
-                       DateTimeOffset.TryParse(sdto, CultureInfo.InvariantCulture,
-                           DateTimeStyles.RoundtripKind, out var dto)
-                       ? (T?)(object?)dto : default;
+            {
+                if (TryGetDateTimeOffset(item, out var dto))
+                    return (T?)(object?)dto;
+                return default;
+            }
             if (targetType == typeof(TimeSpan))
+            {
+                if (item is long ticks)
+                    return (T?)(object?)TimeSpan.FromTicks(ticks);
                 return item is string sts &&
-                       TimeSpan.TryParse(sts, CultureInfo.InvariantCulture, out var ts)
-                       ? (T?)(object?)ts : default;
+                    TimeSpan.TryParse(sts, CultureInfo.InvariantCulture, out var ts)
+                    ? (T?)(object?)ts : default;
+            }
             if (targetType == typeof(byte[]))
                 return (T?)(object?)(item as byte[]);
         }
@@ -324,4 +426,81 @@ internal class MessagePackParseNode : IParseNode
 
         return default;
     }
+
+    private static bool TryReadDecimal(byte[] bytes, out decimal value)
+    {
+        if (bytes.Length == 16)
+        {
+            value = new decimal(
+                [
+                    BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(0, 4)),
+                    BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(4, 4)),
+                    BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(8, 4)),
+                    BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4)),
+                ]);
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static bool TryGetDateTimeOffset(object? value, out DateTimeOffset result)
+    {
+        switch (value)
+        {
+            case DateTimeOffset dateTimeOffset:
+                result = dateTimeOffset;
+                return true;
+            case List<object?> list when
+                list.Count == 2 &&
+                list[0] is DateTime dateTime &&
+                list[1] is long offsetMinutes:
+                    result = new DateTimeOffset(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc))
+                        .ToOffset(TimeSpan.FromMinutes(offsetMinutes));
+                    return true;
+            case DateTime dateTime:
+                result = new DateTimeOffset(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc));
+                return true;
+            case string s when DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed):
+                result = parsed;
+                return true;
+            default:
+                result = default;
+                return false;
+        }
+    }
+
+    private static Guid ReadGuidExtension(ReadOnlySequence<byte> data)
+    {
+        var bytes = data.ToArray();
+        if (bytes.Length != 16)
+            throw new InvalidOperationException($"MessagePack Guid extension payload must be 16 bytes, got {bytes.Length}.");
+
+        return new Guid(bytes);
+    }
+
+    private static DateTimeOffset ReadDateTimeOffsetExtension(ReadOnlySequence<byte> data)
+    {
+        var bytes = data.ToArray();
+        if (bytes.Length != 10)
+            throw new InvalidOperationException($"MessagePack DateTimeOffset extension payload must be 10 bytes, got {bytes.Length}.");
+
+        var utcTicks = BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(0, 8));
+        var offsetMinutes = BinaryPrimitives.ReadInt16LittleEndian(bytes.AsSpan(8, 2));
+        return new DateTimeOffset(utcTicks, TimeSpan.Zero).ToOffset(TimeSpan.FromMinutes(offsetMinutes));
+    }
+}
+
+internal sealed class MessagePackObjectMap
+{
+    public MessagePackObjectMap(int capacity)
+    {
+        StringEntries = new Dictionary<string, object?>(capacity, StringComparer.Ordinal);
+        IntegerEntries = new Dictionary<int, object?>(capacity);
+    }
+
+    public Dictionary<string, object?> StringEntries { get; }
+
+    public Dictionary<int, object?> IntegerEntries { get; }
 }

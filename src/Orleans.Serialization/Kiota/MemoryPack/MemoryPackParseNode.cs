@@ -2,6 +2,7 @@ using MemoryPack;
 using Microsoft.Kiota.Abstractions;
 using Microsoft.Kiota.Abstractions.Serialization;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Globalization;
 
 namespace Orleans.Serialization;
@@ -19,6 +20,7 @@ namespace Orleans.Serialization;
 internal class MemoryPackParseNode : IParseNode
 {
     private readonly object? _value;
+    private readonly ParsablePropertyKeyMap? _propertyKeyMap;
 
     public Action<IParsable>? OnBeforeAssignFieldValues { get; set; }
     public Action<IParsable>? OnAfterAssignFieldValues { get; set; }
@@ -43,9 +45,10 @@ internal class MemoryPackParseNode : IParseNode
         }
     }
 
-    private MemoryPackParseNode(object? value)
+    private MemoryPackParseNode(object? value, ParsablePropertyKeyMap? propertyKeyMap = null)
     {
         _value = value;
+        _propertyKeyMap = propertyKeyMap;
     }
 
     private static ReadOnlySpan<byte> GetContiguousSpan(ReadOnlySequence<byte> sequence, out IMemoryOwner<byte>? owner)
@@ -137,20 +140,73 @@ internal class MemoryPackParseNode : IParseNode
                     return (v, pos);
                 }
 
+            case ValueTag.Decimal:
+                {
+                    if (span.Length < pos + 16)
+                        throw new InvalidOperationException("Unexpected end of MemoryPack decimal payload.");
+                    var payload = span.Slice(pos, 16).ToArray();
+                    pos += 16;
+                    return (payload, pos);
+                }
+
+            case ValueTag.Guid:
+                {
+                    if (span.Length < pos + 16)
+                        throw new InvalidOperationException("Unexpected end of MemoryPack Guid payload.");
+                    var payload = span.Slice(pos, 16).ToArray();
+                    pos += 16;
+                    return (new Guid(payload), pos);
+                }
+
+            case ValueTag.DateTimeOffset:
+                {
+                    if (span.Length < pos + 10)
+                        throw new InvalidOperationException("Unexpected end of MemoryPack DateTimeOffset payload.");
+                    var utcTicks = BinaryPrimitives.ReadInt64LittleEndian(span.Slice(pos, 8));
+                    var offsetMinutes = BinaryPrimitives.ReadInt16LittleEndian(span.Slice(pos + 8, 2));
+                    pos += 10;
+                    return (new DateTimeOffset(utcTicks, TimeSpan.Zero).ToOffset(TimeSpan.FromMinutes(offsetMinutes)), pos);
+                }
+
+            case ValueTag.TimeSpan:
+                {
+                    long ticks = default;
+                    pos += MemoryPackSerializer.Deserialize<long>(span.Slice(pos), ref ticks);
+                    return (ticks, pos);
+                }
+
             case ValueTag.Map:
                 {
                     int count = default;
                     pos += MemoryPackSerializer.Deserialize<int>(span.Slice(pos), ref count);
-                    var dict = new Dictionary<string, object?>(count, StringComparer.Ordinal);
+                    var map = new MemoryPackObjectMap(count);
                     for (int i = 0; i < count; i++)
                     {
-                        string? key = null;
-                        pos += MemoryPackSerializer.Deserialize<string>(span.Slice(pos), ref key);
-                        var (val, consumed) = ReadTaggedValue(span.Slice(pos));
-                        pos += consumed;
-                        dict[key!] = val;
+                        if (span.Length <= pos)
+                            throw new InvalidOperationException("Unexpected end of MemoryPack map key.");
+
+                        var keyTag = (MapKeyTag)span[pos++];
+                        switch (keyTag)
+                        {
+                            case MapKeyTag.String:
+                                string? key = null;
+                                pos += MemoryPackSerializer.Deserialize<string>(span.Slice(pos), ref key);
+                                var (stringVal, stringConsumed) = ReadTaggedValue(span.Slice(pos));
+                                pos += stringConsumed;
+                                map.StringEntries[key!] = stringVal;
+                                break;
+                            case MapKeyTag.Int:
+                                int keyId = default;
+                                pos += MemoryPackSerializer.Deserialize<int>(span.Slice(pos), ref keyId);
+                                var (intVal, intConsumed) = ReadTaggedValue(span.Slice(pos));
+                                pos += intConsumed;
+                                map.IntegerEntries[keyId] = intVal;
+                                break;
+                            default:
+                                throw new InvalidOperationException($"Unknown MemoryPack map key tag: 0x{(byte)keyTag:X2}");
+                        }
                     }
-                    return (dict, pos);
+                    return (map, pos);
                 }
 
             case ValueTag.Array:
@@ -190,6 +246,8 @@ internal class MemoryPackParseNode : IParseNode
 
     public decimal? GetDecimalValue()
     {
+        if (_value is byte[] bytes && TryReadDecimal(bytes, out var decimalValue))
+            return decimalValue;
         if (_value is string s)
             return decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var r) ? r : null;
         if (_value is double d)
@@ -198,14 +256,28 @@ internal class MemoryPackParseNode : IParseNode
     }
 
     public Guid? GetGuidValue()
-        => _value is string s && Guid.TryParse(s, out var g) ? g : null;
+        => _value switch
+        {
+            Guid g => g,
+            string s when Guid.TryParse(s, out var g) => g,
+            _ => null,
+        };
 
     public DateTimeOffset? GetDateTimeOffsetValue()
-        => _value is string s && DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture,
-               DateTimeStyles.RoundtripKind, out var dt) ? dt : null;
+        => _value switch
+        {
+            DateTimeOffset dto => dto,
+            string s when DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed) => parsed,
+            _ => null,
+        };
 
     public TimeSpan? GetTimeSpanValue()
-        => _value is string s && TimeSpan.TryParse(s, CultureInfo.InvariantCulture, out var ts) ? ts : null;
+        => _value switch
+        {
+            long ticks => TimeSpan.FromTicks(ticks),
+            string s when TimeSpan.TryParse(s, CultureInfo.InvariantCulture, out var ts) => ts,
+            _ => null,
+        };
 
     public Date? GetDateValue()
     {
@@ -227,31 +299,52 @@ internal class MemoryPackParseNode : IParseNode
 
     public IParseNode? GetChildNode(string identifier)
     {
-        if (_value is Dictionary<string, object?> dict &&
-            dict.TryGetValue(identifier, out var child))
-            return new MemoryPackParseNode(child);
+        if (_value is MemoryPackObjectMap map)
+        {
+            if (map.StringEntries.TryGetValue(identifier, out var child))
+                return new MemoryPackParseNode(child);
+
+            if (_propertyKeyMap?.TryGetId(identifier, out var keyId) == true &&
+                map.IntegerEntries.TryGetValue(keyId, out child))
+            {
+                return new MemoryPackParseNode(child);
+            }
+        }
         return null;
     }
 
     public T GetObjectValue<T>(ParsableFactory<T> factory) where T : IParsable
     {
         if (_value is null) return default!;
-        var item = factory(this);
-        OnBeforeAssignFieldValues?.Invoke(item);
-        AssignFieldValues(item);
-        OnAfterAssignFieldValues?.Invoke(item);
+        var typedNode = CreateTypedNode(typeof(T));
+        var item = factory(typedNode);
+        typedNode.OnBeforeAssignFieldValues?.Invoke(item);
+        typedNode.AssignFieldValues(item);
+        typedNode.OnAfterAssignFieldValues?.Invoke(item);
+        return item;
+    }
+
+    internal IParsable GetObjectValue(ParsableFactory<IParsable> factory, Type declaredType)
+    {
+        if (_value is null) return default!;
+        var typedNode = CreateTypedNode(declaredType);
+        var item = factory(typedNode);
+        typedNode.OnBeforeAssignFieldValues?.Invoke(item);
+        typedNode.AssignFieldValues(item);
+        typedNode.OnAfterAssignFieldValues?.Invoke(item);
         return item;
     }
 
     private void AssignFieldValues<T>(T item) where T : IParsable
     {
-        if (_value is not Dictionary<string, object?> dict)
+        if (_value is not MemoryPackObjectMap map)
             return;
 
         var deserializers = item.GetFieldDeserializers();
         var additionalData = (item as IAdditionalDataHolder)?.AdditionalData;
+        var propertyKeyMap = ParsablePropertyKeyMap.For(item.GetType());
 
-        foreach (var (key, val) in dict)
+        foreach (var (key, val) in map.StringEntries)
         {
             var childNode = new MemoryPackParseNode(val);
             if (deserializers.TryGetValue(key, out var deserializer))
@@ -259,7 +352,27 @@ internal class MemoryPackParseNode : IParseNode
             else
                 additionalData?.TryAdd(key, val!);
         }
+
+        foreach (var (keyId, val) in map.IntegerEntries)
+        {
+            if (!propertyKeyMap.TryGetKey(keyId, out var key) || key is null)
+            {
+                throw new InvalidOperationException($"Unknown MemoryPack property key id '{keyId}' for type '{item.GetType().FullName}'.");
+            }
+
+            var childNode = new MemoryPackParseNode(val);
+            if (deserializers.TryGetValue(key, out var deserializer))
+                deserializer(childNode);
+            else
+                additionalData?.TryAdd(key, val!);
+        }
     }
+
+    private MemoryPackParseNode CreateTypedNode(Type type) => new(_value, ParsablePropertyKeyMap.For(type))
+    {
+        OnBeforeAssignFieldValues = OnBeforeAssignFieldValues,
+        OnAfterAssignFieldValues = OnAfterAssignFieldValues,
+    };
 
     public IEnumerable<T> GetCollectionOfObjectValues<T>(ParsableFactory<T> factory)
         where T : IParsable
@@ -365,6 +478,8 @@ internal class MemoryPackParseNode : IParseNode
                 return item is double dd ? (T?)(object?)dd : default;
             if (targetType == typeof(decimal))
             {
+                if (item is byte[] decimalBytes && TryReadDecimal(decimalBytes, out var decimalValue))
+                    return (T?)(object?)decimalValue;
                 if (item is string sd)
                     return decimal.TryParse(sd, NumberStyles.Any,
                                CultureInfo.InvariantCulture, out var r)
@@ -374,17 +489,29 @@ internal class MemoryPackParseNode : IParseNode
                 return default;
             }
             if (targetType == typeof(Guid))
+            {
+                if (item is Guid guid)
+                    return (T?)(object?)guid;
                 return item is string sg && Guid.TryParse(sg, out var g)
-                       ? (T?)(object?)g : default;
+                    ? (T?)(object?)g : default;
+            }
             if (targetType == typeof(DateTimeOffset))
+            {
+                if (item is DateTimeOffset dto)
+                    return (T?)(object?)dto;
                 return item is string sdto &&
-                       DateTimeOffset.TryParse(sdto, CultureInfo.InvariantCulture,
-                           DateTimeStyles.RoundtripKind, out var dto)
-                       ? (T?)(object?)dto : default;
+                    DateTimeOffset.TryParse(sdto, CultureInfo.InvariantCulture,
+                        DateTimeStyles.RoundtripKind, out dto)
+                    ? (T?)(object?)dto : default;
+            }
             if (targetType == typeof(TimeSpan))
+            {
+                if (item is long ticks)
+                    return (T?)(object?)TimeSpan.FromTicks(ticks);
                 return item is string sts &&
-                       TimeSpan.TryParse(sts, CultureInfo.InvariantCulture, out var ts)
-                       ? (T?)(object?)ts : default;
+                    TimeSpan.TryParse(sts, CultureInfo.InvariantCulture, out var ts)
+                    ? (T?)(object?)ts : default;
+            }
             if (targetType == typeof(byte[]))
                 return (T?)(object?)(item as byte[]);
         }
@@ -393,4 +520,35 @@ internal class MemoryPackParseNode : IParseNode
 
         return default;
     }
+
+    private static bool TryReadDecimal(byte[] bytes, out decimal value)
+    {
+        if (bytes.Length == 16)
+        {
+            value = new decimal(
+                [
+                    BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(0, 4)),
+                    BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(4, 4)),
+                    BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(8, 4)),
+                    BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4)),
+                ]);
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+}
+
+internal sealed class MemoryPackObjectMap
+{
+    public MemoryPackObjectMap(int capacity)
+    {
+        StringEntries = new Dictionary<string, object?>(capacity, StringComparer.Ordinal);
+        IntegerEntries = new Dictionary<int, object?>(capacity);
+    }
+
+    public Dictionary<string, object?> StringEntries { get; }
+
+    public Dictionary<int, object?> IntegerEntries { get; }
 }

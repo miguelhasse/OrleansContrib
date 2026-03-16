@@ -18,6 +18,8 @@
 
   <ItemGroup>
     <Compile Include="..\Shared\BrotliCodec.cs" />
+    <Compile Include="..\Shared\EmptyParseNode.cs" />
+    <Compile Include="..\Shared\ParsablePropertyKeyMap.cs" />
     <Compile Include="..\Shared\ParsableFactoryHelper.cs" />
   </ItemGroup>
 

@@ -58,7 +58,7 @@ dotnet run --project .\benchmarks\Orleans.Serialization\Kiota\Orleans.Serializat
 
 ## Benchmark report
 
-Latest generated BenchmarkDotNet results are available under `BenchmarkDotNet.Artifacts\results`. The most recent validation run produced `Orleans.Serialization.Kiota.Benchmarks.KiotaCodecPerformanceBenchmarks-report-github.md`, and the matching compression summary is captured in `BenchmarkRun-20260316-104737.log`.
+Latest generated BenchmarkDotNet results are available under `BenchmarkDotNet.Artifacts\results`. The most recent focused post-tuning validation run produced `Orleans.Serialization.Kiota.Benchmarks.KiotaCodecCompressionBenchmarks-report-github.md`, plus matching CSV and HTML exports in the same folder.
 
 Environment:
 
@@ -66,47 +66,35 @@ Environment:
 - Windows 11 `10.0.26200.8037` / .NET SDK `10.0.200`
 - Intel Core i9-10900 CPU 2.80GHz
 
-The latest validation run compares:
+The latest focused validation run compares:
 
-- `Serialize`, `Deserialize`, and `DeepCopy`
+- `Serialize`
 - codec types
 - compression disabled and enabled
-- Graph entity kinds
+- the tuned `User`, `Chat`, and `Team` Graph entity kinds
 - payload size with and without compression
 - mean execution time
 - memory allocation
 
-The published artifact is the full performance report, while the same run's compression benchmark log supplies `Uncompressed Bytes`, `Compressed Bytes`, and `Compression Ratio`.
+This focused `KiotaCodecCompressionBenchmarks` run includes `Collection Shape`, `Uncompressed Bytes`, `Compressed Bytes`, and `Compression Ratio` directly in the generated report.
 
-`Serialize` comparison excerpt from the latest generated performance report (`mean`, compression off/on):
-
-| Entity | Json | MessagePack | MemoryPack |
-|---|---|---|---|
-| User | 9.432 / 37.848 us | 25.277 / 121.906 us | 19.977 / 130.072 us |
-| Message | 8.024 / 56.704 us | 9.865 / 70.191 us | 9.006 / 82.835 us |
-| Chat | 34.639 / 127.390 us | 59.228 / 206.301 us | 51.622 / 236.326 us |
-| ChatMessage | 11.983 / 80.765 us | 16.148 / 91.718 us | 15.414 / 107.829 us |
-| Event | 6.513 / 47.135 us | 12.596 / 79.824 us | 10.799 / 98.975 us |
-| Group | 14.650 / 46.320 us | 42.360 / 165.173 us | 34.181 / 185.463 us |
-| Contact | 4.866 / 34.975 us | 6.807 / 51.255 us | 5.828 / 66.047 us |
-| DriveItem | 13.833 / 53.836 us | 23.887 / 95.077 us | 22.897 / 120.819 us |
-| Team | 21.915 / 73.457 us | 49.072 / 193.695 us | 45.400 / 218.494 us |
-
-The full report also captures allocation data for every `Serialize`, `Deserialize`, and `DeepCopy` run, plus HTML and CSV exports in the same results folder.
-
-Payload-size excerpt from the latest compression summary (`uncompressed -> compressed bytes / ratio`):
+Latest focused `Serialize` comparison (`mean / allocated`, compression off/on):
 
 | Entity | Json | MessagePack | MemoryPack |
 |---|---|---|---|
-| User | 742 -> 382 B / 48.52% | 4878 -> 1455 B / 70.17% | 7044 -> 1697 B / 75.91% |
-| Message | 3411 -> 684 B / 79.95% | 3654 -> 821 B / 77.53% | 4499 -> 1000 B / 77.77% |
-| Chat | 5177 -> 1172 B / 77.36% | 9821 -> 2454 B / 75.01% | 13899 -> 2889 B / 79.21% |
-| ChatMessage | 3235 -> 851 B / 73.69% | 3594 -> 977 B / 72.82% | 5013 -> 1205 B / 75.96% |
-| Event | 1712 -> 544 B / 68.22% | 2615 -> 965 B / 63.10% | 3655 -> 1170 B / 67.99% |
-| Group | 1294 -> 403 B / 68.86% | 8743 -> 1837 B / 78.99% | 12286 -> 2109 B / 82.83% |
-| Contact | 902 -> 466 B / 48.34% | 1248 -> 696 B / 44.23% | 1994 -> 857 B / 57.02% |
-| DriveItem | 1868 -> 528 B / 71.73% | 4008 -> 882 B / 77.99% | 6387 -> 1071 B / 83.23% |
-| Team | 2249 -> 641 B / 71.50% | 10044 -> 2257 B / 77.53% | 14035 -> 2590 B / 81.55% |
+| User | 10.01 us / 2.84 KB ; 39.08 us / 2.52 KB | 20.53 us / 4.16 KB ; 58.06 us / 3.71 KB | 15.27 us / 5.48 KB ; 77.77 us / 3.86 KB |
+| Chat | 35.81 us / 9.49 KB ; 129.63 us / 5.63 KB | 47.77 us / 13.61 KB ; 146.86 us / 10.94 KB | 38.87 us / 15.66 KB ; 157.48 us / 10.73 KB |
+| Team | 21.69 us / 6.18 KB ; 77.27 us / 4.63 KB | 41.94 us / 8.17 KB ; 112.24 us / 6.45 KB | 32.85 us / 10.53 KB ; 122.04 us / 6.66 KB |
+
+Payload-size excerpt from the same focused run (`uncompressed -> compressed bytes / ratio`):
+
+| Entity | Json | MessagePack | MemoryPack |
+|---|---|---|---|
+| User | 742 -> 382 B / 48.52% | 987 -> 508 B / 48.53% | 2290 -> 614 B / 73.19% |
+| Chat | 5177 -> 1172 B / 77.36% | 4018 -> 1260 B / 68.64% | 6600 -> 1489 B / 77.44% |
+| Team | 2249 -> 641 B / 71.50% | 2556 -> 766 B / 70.03% | 4922 -> 911 B / 81.49% |
+
+These final focused numbers show the codec tuning closed a large part of the earlier MessagePack and MemoryPack overhead, especially on `MessagePack` payload size, but `Json` still leads on throughput for these three representative entities.
 
 ## Documentation
 
