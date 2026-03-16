@@ -19,7 +19,7 @@ namespace Orleans.Serialization;
 /// </remarks>
 internal class MemoryPackParseNode : IParseNode
 {
-    private readonly object? _value;
+    private object? _value;
     private readonly ParsablePropertyKeyMap? _propertyKeyMap;
 
     public Action<IParsable>? OnBeforeAssignFieldValues { get; set; }
@@ -33,16 +33,12 @@ internal class MemoryPackParseNode : IParseNode
 
     public MemoryPackParseNode(ReadOnlySequence<byte> sequence)
     {
-        var span = GetContiguousSpan(sequence, out var owner);
-        try
-        {
-            var (value, _) = ReadTaggedValue(span);
-            _value = value;
-        }
-        finally
-        {
-            owner?.Dispose();
-        }
+        var span = sequence.IsSingleSegment
+            ? sequence.FirstSpan
+            : sequence.ToArray().AsSpan();
+
+        var (value, _) = ReadTaggedValue(span);
+        _value = value;
     }
 
     private MemoryPackParseNode(object? value, ParsablePropertyKeyMap? propertyKeyMap = null)
@@ -51,17 +47,9 @@ internal class MemoryPackParseNode : IParseNode
         _propertyKeyMap = propertyKeyMap;
     }
 
-    private static ReadOnlySpan<byte> GetContiguousSpan(ReadOnlySequence<byte> sequence, out IMemoryOwner<byte>? owner)
+    private void ResetValue(object? value)
     {
-        if (sequence.IsSingleSegment)
-        {
-            owner = null;
-            return sequence.FirstSpan;
-        }
-
-        owner = MemoryPool<byte>.Shared.Rent((int)sequence.Length);
-        sequence.CopyTo(owner.Memory.Span);
-        return owner.Memory.Span[..(int)sequence.Length];
+        _value = value;
     }
 
     private static (object? Value, int Consumed) ReadTaggedValue(ReadOnlySpan<byte> span)
@@ -144,16 +132,18 @@ internal class MemoryPackParseNode : IParseNode
                 {
                     if (span.Length < pos + 16)
                         throw new InvalidOperationException("Unexpected end of MemoryPack decimal payload.");
-                    var payload = span.Slice(pos, 16).ToArray();
+                    var payload = span.Slice(pos, 16);
                     pos += 16;
-                    return (payload, pos);
+                    if (!TryReadDecimal(payload, out var value))
+                        throw new InvalidOperationException("Invalid MemoryPack decimal payload.");
+                    return (value, pos);
                 }
 
             case ValueTag.Guid:
                 {
                     if (span.Length < pos + 16)
                         throw new InvalidOperationException("Unexpected end of MemoryPack Guid payload.");
-                    var payload = span.Slice(pos, 16).ToArray();
+                    var payload = span.Slice(pos, 16);
                     pos += 16;
                     return (new Guid(payload), pos);
                 }
@@ -193,14 +183,14 @@ internal class MemoryPackParseNode : IParseNode
                                 pos += MemoryPackSerializer.Deserialize<string>(span.Slice(pos), ref key);
                                 var (stringVal, stringConsumed) = ReadTaggedValue(span.Slice(pos));
                                 pos += stringConsumed;
-                                map.StringEntries[key!] = stringVal;
+                                map.AddStringEntry(key!, stringVal);
                                 break;
                             case MapKeyTag.Int:
                                 int keyId = default;
                                 pos += MemoryPackSerializer.Deserialize<int>(span.Slice(pos), ref keyId);
                                 var (intVal, intConsumed) = ReadTaggedValue(span.Slice(pos));
                                 pos += intConsumed;
-                                map.IntegerEntries[keyId] = intVal;
+                                map.AddIntegerEntry(keyId, intVal);
                                 break;
                             default:
                                 throw new InvalidOperationException($"Unknown MemoryPack map key tag: 0x{(byte)keyTag:X2}");
@@ -228,24 +218,61 @@ internal class MemoryPackParseNode : IParseNode
         }
     }
 
-    public string? GetStringValue() => _value as string;
+    private void EnsureMaterialized() { }
 
-    public bool? GetBoolValue() => _value as bool?;
+    public string? GetStringValue()
+    {
+        EnsureMaterialized();
+        return _value as string;
+    }
 
-    public byte? GetByteValue() => _value is long l ? (byte)l : null;
+    public bool? GetBoolValue()
+    {
+        EnsureMaterialized();
+        return _value as bool?;
+    }
 
-    public sbyte? GetSbyteValue() => _value is long l ? (sbyte)l : null;
+    public byte? GetByteValue()
+    {
+        EnsureMaterialized();
+        return _value is long l ? (byte)l : null;
+    }
 
-    public int? GetIntValue() => _value is long l ? (int)l : null;
+    public sbyte? GetSbyteValue()
+    {
+        EnsureMaterialized();
+        return _value is long l ? (sbyte)l : null;
+    }
 
-    public long? GetLongValue() => _value as long?;
+    public int? GetIntValue()
+    {
+        EnsureMaterialized();
+        return _value is long l ? (int)l : null;
+    }
 
-    public float? GetFloatValue() => _value is double d ? (float)d : null;
+    public long? GetLongValue()
+    {
+        EnsureMaterialized();
+        return _value as long?;
+    }
 
-    public double? GetDoubleValue() => _value as double?;
+    public float? GetFloatValue()
+    {
+        EnsureMaterialized();
+        return _value is double d ? (float)d : null;
+    }
+
+    public double? GetDoubleValue()
+    {
+        EnsureMaterialized();
+        return _value as double?;
+    }
 
     public decimal? GetDecimalValue()
     {
+        EnsureMaterialized();
+        if (_value is decimal value)
+            return value;
         if (_value is byte[] bytes && TryReadDecimal(bytes, out var decimalValue))
             return decimalValue;
         if (_value is string s)
@@ -256,31 +283,41 @@ internal class MemoryPackParseNode : IParseNode
     }
 
     public Guid? GetGuidValue()
-        => _value switch
+    {
+        EnsureMaterialized();
+        return _value switch
         {
             Guid g => g,
             string s when Guid.TryParse(s, out var g) => g,
             _ => null,
         };
+    }
 
     public DateTimeOffset? GetDateTimeOffsetValue()
-        => _value switch
+    {
+        EnsureMaterialized();
+        return _value switch
         {
             DateTimeOffset dto => dto,
             string s when DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var parsed) => parsed,
             _ => null,
         };
+    }
 
     public TimeSpan? GetTimeSpanValue()
-        => _value switch
+    {
+        EnsureMaterialized();
+        return _value switch
         {
             long ticks => TimeSpan.FromTicks(ticks),
             string s when TimeSpan.TryParse(s, CultureInfo.InvariantCulture, out var ts) => ts,
             _ => null,
         };
+    }
 
     public Date? GetDateValue()
     {
+        EnsureMaterialized();
         if (_value is string s && DateTime.TryParse(s, CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out var d))
             return new Date(d);
@@ -289,23 +326,29 @@ internal class MemoryPackParseNode : IParseNode
 
     public Time? GetTimeValue()
     {
+        EnsureMaterialized();
         if (_value is string s && DateTime.TryParse(s, CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out var t))
             return new Time(t);
         return null;
     }
 
-    public byte[]? GetByteArrayValue() => _value as byte[];
+    public byte[]? GetByteArrayValue()
+    {
+        EnsureMaterialized();
+        return _value as byte[];
+    }
 
     public IParseNode? GetChildNode(string identifier)
     {
+        EnsureMaterialized();
         if (_value is MemoryPackObjectMap map)
         {
-            if (map.StringEntries.TryGetValue(identifier, out var child))
+            if (map.TryGetStringEntry(identifier, out var child))
                 return new MemoryPackParseNode(child);
 
             if (_propertyKeyMap?.TryGetId(identifier, out var keyId) == true &&
-                map.IntegerEntries.TryGetValue(keyId, out child))
+                map.TryGetIntegerEntry(keyId, out child))
             {
                 return new MemoryPackParseNode(child);
             }
@@ -315,7 +358,9 @@ internal class MemoryPackParseNode : IParseNode
 
     public T GetObjectValue<T>(ParsableFactory<T> factory) where T : IParsable
     {
-        if (_value is null) return default!;
+        if (_value is null)
+            return default!;
+
         var typedNode = CreateTypedNode(typeof(T));
         var item = factory(typedNode);
         typedNode.OnBeforeAssignFieldValues?.Invoke(item);
@@ -326,7 +371,9 @@ internal class MemoryPackParseNode : IParseNode
 
     internal IParsable GetObjectValue(ParsableFactory<IParsable> factory, Type declaredType)
     {
-        if (_value is null) return default!;
+        if (_value is null)
+            return default!;
+
         var typedNode = CreateTypedNode(declaredType);
         var item = factory(typedNode);
         typedNode.OnBeforeAssignFieldValues?.Invoke(item);
@@ -337,16 +384,18 @@ internal class MemoryPackParseNode : IParseNode
 
     private void AssignFieldValues<T>(T item) where T : IParsable
     {
+        EnsureMaterialized();
         if (_value is not MemoryPackObjectMap map)
             return;
 
         var deserializers = item.GetFieldDeserializers();
         var additionalData = (item as IAdditionalDataHolder)?.AdditionalData;
         var propertyKeyMap = ParsablePropertyKeyMap.For(item.GetType());
+        var childNode = new MemoryPackParseNode((object?)null);
 
         foreach (var (key, val) in map.StringEntries)
         {
-            var childNode = new MemoryPackParseNode(val);
+            childNode.ResetValue(val);
             if (deserializers.TryGetValue(key, out var deserializer))
                 deserializer(childNode);
             else
@@ -360,7 +409,7 @@ internal class MemoryPackParseNode : IParseNode
                 throw new InvalidOperationException($"Unknown MemoryPack property key id '{keyId}' for type '{item.GetType().FullName}'.");
             }
 
-            var childNode = new MemoryPackParseNode(val);
+            childNode.ResetValue(val);
             if (deserializers.TryGetValue(key, out var deserializer))
                 deserializer(childNode);
             else
@@ -368,15 +417,20 @@ internal class MemoryPackParseNode : IParseNode
         }
     }
 
-    private MemoryPackParseNode CreateTypedNode(Type type) => new(_value, ParsablePropertyKeyMap.For(type))
+    private MemoryPackParseNode CreateTypedNode(Type type)
     {
-        OnBeforeAssignFieldValues = OnBeforeAssignFieldValues,
-        OnAfterAssignFieldValues = OnAfterAssignFieldValues,
-    };
+        var propertyKeyMap = ParsablePropertyKeyMap.For(type);
+        var node = new MemoryPackParseNode(_value, propertyKeyMap);
+
+        node.OnBeforeAssignFieldValues = OnBeforeAssignFieldValues;
+        node.OnAfterAssignFieldValues = OnAfterAssignFieldValues;
+        return node;
+    }
 
     public IEnumerable<T> GetCollectionOfObjectValues<T>(ParsableFactory<T> factory)
         where T : IParsable
     {
+        EnsureMaterialized();
         if (_value is null)
             return default!;
 
@@ -384,9 +438,10 @@ internal class MemoryPackParseNode : IParseNode
             return [];
 
         var result = new List<T>(list.Count);
+        var node = new MemoryPackParseNode((object?)null);
         foreach (var item in list)
         {
-            var node = new MemoryPackParseNode(item);
+            node.ResetValue(item);
             var parsed = node.GetObjectValue(factory);
             if (parsed is not null)
                 result.Add(parsed);
@@ -397,6 +452,7 @@ internal class MemoryPackParseNode : IParseNode
 
     public IEnumerable<T> GetCollectionOfPrimitiveValues<T>()
     {
+        EnsureMaterialized();
         if (_value is null)
             return default!;
 
@@ -412,6 +468,7 @@ internal class MemoryPackParseNode : IParseNode
 
     public IEnumerable<T?> GetCollectionOfEnumValues<T>() where T : struct, Enum
     {
+        EnsureMaterialized();
         if (_value is null)
             return default!;
 
@@ -444,6 +501,7 @@ internal class MemoryPackParseNode : IParseNode
 
     public T? GetEnumValue<T>() where T : struct, Enum
     {
+        EnsureMaterialized();
         if (_value is string s && Enum.TryParse<T>(s, true, out var fromStr))
             return fromStr;
         if (_value is long l)
@@ -478,8 +536,10 @@ internal class MemoryPackParseNode : IParseNode
                 return item is double dd ? (T?)(object?)dd : default;
             if (targetType == typeof(decimal))
             {
-                if (item is byte[] decimalBytes && TryReadDecimal(decimalBytes, out var decimalValue))
+                if (item is decimal decimalValue)
                     return (T?)(object?)decimalValue;
+                if (item is byte[] decimalBytes && TryReadDecimal(decimalBytes, out var parsedDecimal))
+                    return (T?)(object?)parsedDecimal;
                 if (item is string sd)
                     return decimal.TryParse(sd, NumberStyles.Any,
                                CultureInfo.InvariantCulture, out var r)
@@ -522,16 +582,19 @@ internal class MemoryPackParseNode : IParseNode
     }
 
     private static bool TryReadDecimal(byte[] bytes, out decimal value)
+        => TryReadDecimal(bytes.AsSpan(), out value);
+
+    private static bool TryReadDecimal(ReadOnlySpan<byte> bytes, out decimal value)
     {
         if (bytes.Length == 16)
         {
+            var flags = BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(12, 4));
             value = new decimal(
-                [
-                    BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(0, 4)),
-                    BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(4, 4)),
-                    BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(8, 4)),
-                    BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(12, 4)),
-                ]);
+                BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(0, 4)),
+                BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(4, 4)),
+                BinaryPrimitives.ReadInt32LittleEndian(bytes.Slice(8, 4)),
+                (flags & unchecked((int)0x80000000)) != 0,
+                (byte)((flags >> 16) & 0x7F));
             return true;
         }
 
@@ -551,4 +614,20 @@ internal sealed class MemoryPackObjectMap
     public Dictionary<string, object?> StringEntries { get; }
 
     public Dictionary<int, object?> IntegerEntries { get; }
+
+    public void AddStringEntry(string key, object? value)
+    {
+        StringEntries[key] = value;
+    }
+
+    public void AddIntegerEntry(int key, object? value)
+    {
+        IntegerEntries[key] = value;
+    }
+
+    public bool TryGetStringEntry(string key, out object? value)
+        => StringEntries.TryGetValue(key, out value);
+
+    public bool TryGetIntegerEntry(int key, out object? value)
+        => IntegerEntries.TryGetValue(key, out value);
 }
