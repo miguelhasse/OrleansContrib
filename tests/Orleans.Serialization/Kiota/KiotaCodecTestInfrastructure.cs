@@ -1,0 +1,498 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Graph.Models;
+using Microsoft.Kiota.Abstractions.Serialization;
+using Orleans.Serialization.Cloning;
+using Orleans.Serialization.Codecs;
+using Orleans.Serialization.Serializers;
+using System.Text;
+
+namespace Orleans.Serialization.Kiota.Testing;
+
+public enum KiotaCodecKind
+{
+    Json,
+    MessagePack,
+    MemoryPack,
+}
+
+public enum GraphEntityKind
+{
+    User,
+    Message,
+    Event,
+    Group,
+    Contact,
+    DriveItem,
+    Team,
+}
+
+public sealed class KiotaCodecHarness : IDisposable
+{
+    private readonly ServiceProvider _serviceProvider;
+
+    internal KiotaCodecHarness(ServiceProvider serviceProvider)
+    {
+        _serviceProvider = serviceProvider;
+        ObjectSerializer = _serviceProvider.GetRequiredService<Serializer<object>>();
+        ObjectDeepCopier = _serviceProvider.GetRequiredService<DeepCopier<object>>();
+    }
+
+    public Serializer<object> ObjectSerializer { get; }
+
+    public DeepCopier<object> ObjectDeepCopier { get; }
+
+    public T GetRequiredService<T>() where T : notnull => _serviceProvider.GetRequiredService<T>();
+
+    public void Dispose() => _serviceProvider.Dispose();
+}
+
+public static class KiotaCodecHarnessFactory
+{
+    public static KiotaCodecHarness Create(KiotaCodecKind codecKind, bool compression)
+    {
+        var services = new ServiceCollection();
+        services.AddSerializer(serializerBuilder => Register(serializerBuilder.Services, codecKind, compression));
+
+        return new KiotaCodecHarness(services.BuildServiceProvider());
+    }
+
+    public static void Register(IServiceCollection services, KiotaCodecKind codecKind, bool compression)
+    {
+        switch (codecKind)
+        {
+            case KiotaCodecKind.Json:
+                AddCodec<KiotaJsonCodec, KiotaJsonCodecOptions>(services, options => options.Compression = compression);
+                break;
+            case KiotaCodecKind.MessagePack:
+                AddCodec<KiotaMessagePackCodec, KiotaMessagePackOptions>(services, options => options.Compression = compression);
+                break;
+            case KiotaCodecKind.MemoryPack:
+                AddCodec<KiotaMemoryPackCodec, KiotaMemoryPackOptions>(services, options => options.Compression = compression);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(codecKind), codecKind, "Unknown Kiota codec kind.");
+        }
+    }
+
+    private static void AddCodec<TCodec, TOptions>(IServiceCollection services, Action<TOptions> configure)
+        where TCodec : class, IGeneralizedCodec, IGeneralizedCopier, ITypeFilter
+        where TOptions : class, new()
+    {
+        services.Configure(configure);
+        services.AddSingleton<TCodec>();
+        services.AddSingleton<IGeneralizedCodec>(serviceProvider => serviceProvider.GetRequiredService<TCodec>());
+        services.AddSingleton<IGeneralizedCopier>(serviceProvider => serviceProvider.GetRequiredService<TCodec>());
+        services.AddSingleton<ITypeFilter>(serviceProvider => serviceProvider.GetRequiredService<TCodec>());
+    }
+}
+
+public static class GraphEntitySamples
+{
+    public static IParsable Create(GraphEntityKind entityKind) => entityKind switch
+    {
+        GraphEntityKind.User => CreateUser(),
+        GraphEntityKind.Message => CreateMessage(),
+        GraphEntityKind.Event => CreateEvent(),
+        GraphEntityKind.Group => CreateGroup(),
+        GraphEntityKind.Contact => CreateContact(),
+        GraphEntityKind.DriveItem => CreateDriveItem(),
+        GraphEntityKind.Team => CreateTeam(),
+        _ => throw new ArgumentOutOfRangeException(nameof(entityKind), entityKind, "Unknown graph entity kind."),
+    };
+
+    public static User CreateUser() =>
+        new()
+        {
+            OdataType = "#microsoft.graph.user",
+            Id = "user-ada-lovelace",
+            DisplayName = "Ada Lovelace",
+            GivenName = "Ada",
+            Surname = "Lovelace",
+            Mail = "ada.lovelace@contoso.example",
+            BusinessPhones =
+            [
+                "+1 425 555 0100",
+                "+1 425 555 0101",
+            ],
+            Identities =
+            [
+                new ObjectIdentity
+                {
+                    SignInType = "emailAddress",
+                    Issuer = "contoso.example",
+                    IssuerAssignedId = "ada.lovelace@contoso.example",
+                },
+                new ObjectIdentity
+                {
+                    SignInType = "federated",
+                    Issuer = "fabrikam.example",
+                    IssuerAssignedId = "ada-lovelace-fabrikam",
+                },
+            ],
+            EmployeeOrgData = new EmployeeOrgData
+            {
+                Division = "Engineering",
+                CostCenter = "RND-042",
+            },
+            Manager = new User
+            {
+                OdataType = "#microsoft.graph.user",
+                Id = "user-charles-babbage",
+                DisplayName = "Charles Babbage",
+                Mail = "charles.babbage@contoso.example",
+            },
+        };
+
+    public static Message CreateMessage() =>
+        new()
+        {
+            OdataType = "#microsoft.graph.message",
+            Id = "message-quarterly-review",
+            Subject = "Quarterly architecture review",
+            Body = new ItemBody
+            {
+                Content = CreateLongText(
+                    "The Orleans + Kiota integration review covers serialization fidelity, message throughput, and payload stability.",
+                    10),
+            },
+            From = CreateRecipient("Ada Lovelace", "ada.lovelace@contoso.example"),
+            ToRecipients =
+            [
+                CreateRecipient("Grace Hopper", "grace.hopper@contoso.example"),
+                CreateRecipient("Margaret Hamilton", "margaret.hamilton@contoso.example"),
+            ],
+            ReplyTo =
+            [
+                CreateRecipient("Architecture Guild", "architecture-guild@contoso.example"),
+            ],
+            InternetMessageHeaders =
+            [
+                new InternetMessageHeader
+                {
+                    Name = "X-Environment",
+                    Value = "Integration",
+                },
+                new InternetMessageHeader
+                {
+                    Name = "X-Orleans-Codec",
+                    Value = "Kiota",
+                },
+            ],
+            Attachments =
+            [
+                new FileAttachment
+                {
+                    OdataType = "#microsoft.graph.fileAttachment",
+                    Name = "review-notes.txt",
+                    ContentType = "text/plain",
+                    ContentBytes = Encoding.UTF8.GetBytes(CreateLongText("Serialized attachment content.", 24)),
+                },
+                new FileAttachment
+                {
+                    OdataType = "#microsoft.graph.fileAttachment",
+                    Name = "agenda.txt",
+                    ContentType = "text/plain",
+                    ContentBytes = Encoding.UTF8.GetBytes(CreateLongText("Agenda item.", 16)),
+                },
+            ],
+        };
+
+    public static Event CreateEvent() =>
+        new()
+        {
+            OdataType = "#microsoft.graph.event",
+            Id = "event-architecture-sync",
+            Subject = "Architecture sync",
+            Body = new ItemBody
+            {
+                Content = CreateLongText("Discussion topics include codec registration, payload compression, and benchmark baselines.", 8),
+            },
+            Start = new DateTimeTimeZone
+            {
+                DateTime = "2026-03-15T09:30:00",
+                TimeZone = "UTC",
+            },
+            End = new DateTimeTimeZone
+            {
+                DateTime = "2026-03-15T10:30:00",
+                TimeZone = "UTC",
+            },
+            Organizer = CreateRecipient("Ada Lovelace", "ada.lovelace@contoso.example"),
+            Attendees =
+            [
+                new Attendee
+                {
+                    EmailAddress = new EmailAddress
+                    {
+                        Name = "Grace Hopper",
+                        Address = "grace.hopper@contoso.example",
+                    },
+                },
+                new Attendee
+                {
+                    EmailAddress = new EmailAddress
+                    {
+                        Name = "Margaret Hamilton",
+                        Address = "margaret.hamilton@contoso.example",
+                    },
+                },
+            ],
+            Locations =
+            [
+                new Location
+                {
+                    DisplayName = "Virtual room",
+                    Address = new PhysicalAddress
+                    {
+                        Street = "2 Collaboration Ave",
+                        City = "Seattle",
+                        CountryOrRegion = "USA",
+                        PostalCode = "98101",
+                    },
+                },
+            ],
+            Location = new Location
+            {
+                DisplayName = "Building 1 / Room 42",
+                Address = new PhysicalAddress
+                {
+                    Street = "1 Developer Way",
+                    City = "Redmond",
+                    CountryOrRegion = "USA",
+                    PostalCode = "98052",
+                },
+            },
+        };
+
+    public static Group CreateGroup() =>
+        new()
+        {
+            OdataType = "#microsoft.graph.group",
+            Id = "group-platform-serialization",
+            DisplayName = "Platform Serialization Guild",
+            Description = CreateLongText("A working group focused on serialization, interoperability, and codec benchmarking.", 6),
+            MailNickname = "platform-serialization",
+            MailEnabled = true,
+            SecurityEnabled = false,
+            GroupTypes =
+            [
+                "Unified",
+                "DynamicMembership",
+            ],
+            Members =
+            [
+                CreateMemberUser("member-alan-turing", "Alan Turing"),
+                CreateMemberUser("member-donald-knuth", "Donald Knuth"),
+            ],
+            Owners =
+            [
+                CreateMemberUser("owner-katherine-johnson", "Katherine Johnson"),
+            ],
+        };
+
+    public static Contact CreateContact() =>
+        new()
+        {
+            OdataType = "#microsoft.graph.contact",
+            Id = "contact-grace-hopper",
+            DisplayName = "Grace Hopper",
+            GivenName = "Grace",
+            Surname = "Hopper",
+            CompanyName = "Contoso",
+            JobTitle = "Principal Engineer",
+            EmailAddresses =
+            [
+                new EmailAddress
+                {
+                    Name = "Grace Hopper",
+                    Address = "grace.hopper@contoso.example",
+                },
+                new EmailAddress
+                {
+                    Name = "Grace Hopper (Alt)",
+                    Address = "grace.hopper@fabrikam.example",
+                },
+            ],
+            BusinessPhones =
+            [
+                "+1 206 555 0110",
+            ],
+            HomePhones =
+            [
+                "+1 206 555 0199",
+            ],
+            Categories =
+            [
+                "engineering",
+                "leadership",
+            ],
+            BusinessAddress = CreateAddress("500 Business Rd", "Seattle", "USA", "98109"),
+            HomeAddress = CreateAddress("42 Compiler Ln", "Arlington", "USA", "22201"),
+            OtherAddress = CreateAddress("1 Research Park", "Boston", "USA", "02110"),
+            Children =
+            [
+                "Sam Hopper",
+                "Amy Hopper",
+            ],
+        };
+
+    public static DriveItem CreateDriveItem() =>
+        new()
+        {
+            OdataType = "#microsoft.graph.driveItem",
+            Id = "driveitem-root-architecture",
+            Name = "Architecture",
+            Description = CreateLongText("Shared architecture documents and benchmark notes.", 4),
+            ParentReference = new ItemReference
+            {
+                DriveId = "drive-1",
+                Id = "root",
+                Name = "Documents",
+                Path = "/drive/root:/Documents",
+            },
+            Folder = new Folder
+            {
+                ChildCount = 2,
+            },
+            CreatedBy = CreateIdentitySet("Ada Lovelace", "user-ada-lovelace"),
+            LastModifiedBy = CreateIdentitySet("Grace Hopper", "user-grace-hopper"),
+            Children =
+            [
+                new DriveItem
+                {
+                    OdataType = "#microsoft.graph.driveItem",
+                    Id = "driveitem-child-report",
+                    Name = "serialization-report.md",
+                    ParentReference = new ItemReference
+                    {
+                        DriveId = "drive-1",
+                        Id = "driveitem-root-architecture",
+                        Name = "Architecture",
+                        Path = "/drive/root:/Documents/Architecture",
+                    },
+                    File = new FileObject
+                    {
+                        MimeType = "text/markdown",
+                    },
+                    CreatedBy = CreateIdentitySet("Ada Lovelace", "user-ada-lovelace"),
+                    LastModifiedBy = CreateIdentitySet("Margaret Hamilton", "user-margaret-hamilton"),
+                },
+                new DriveItem
+                {
+                    OdataType = "#microsoft.graph.driveItem",
+                    Id = "driveitem-child-benchmarks",
+                    Name = "Benchmarks",
+                    ParentReference = new ItemReference
+                    {
+                        DriveId = "drive-1",
+                        Id = "driveitem-root-architecture",
+                        Name = "Architecture",
+                        Path = "/drive/root:/Documents/Architecture",
+                    },
+                    Folder = new Folder
+                    {
+                        ChildCount = 1,
+                    },
+                    Children =
+                    [
+                        new DriveItem
+                        {
+                            OdataType = "#microsoft.graph.driveItem",
+                            Id = "driveitem-grandchild-csv",
+                            Name = "results.csv",
+                            ParentReference = new ItemReference
+                            {
+                                DriveId = "drive-1",
+                                Id = "driveitem-child-benchmarks",
+                                Name = "Benchmarks",
+                                Path = "/drive/root:/Documents/Architecture/Benchmarks",
+                            },
+                            File = new FileObject
+                            {
+                                MimeType = "text/csv",
+                            },
+                            CreatedBy = CreateIdentitySet("Donald Knuth", "user-donald-knuth"),
+                            LastModifiedBy = CreateIdentitySet("Grace Hopper", "user-grace-hopper"),
+                        },
+                    ],
+                },
+            ],
+        };
+
+    public static Team CreateTeam() =>
+        new()
+        {
+            OdataType = "#microsoft.graph.team",
+            Id = "team-platform-serialization",
+            DisplayName = "Platform Serialization Team",
+            Description = CreateLongText("Coordinates Kiota serialization work, test coverage, and benchmark analysis.", 5),
+            Classification = "Engineering",
+            FunSettings = new TeamFunSettings
+            {
+                AllowCustomMemes = true,
+                AllowGiphy = false,
+                AllowStickersAndMemes = true,
+            },
+            MemberSettings = new TeamMemberSettings
+            {
+                AllowAddRemoveApps = true,
+                AllowCreatePrivateChannels = true,
+                AllowCreateUpdateChannels = true,
+            },
+            MessagingSettings = new TeamMessagingSettings
+            {
+                AllowChannelMentions = true,
+                AllowTeamMentions = true,
+                AllowUserEditMessages = true,
+                AllowUserDeleteMessages = false,
+            },
+            Summary = new TeamSummary
+            {
+                MembersCount = 8,
+                OwnersCount = 2,
+                GuestsCount = 1,
+            },
+            Group = CreateGroup(),
+        };
+
+    private static Recipient CreateRecipient(string name, string address) =>
+        new()
+        {
+            EmailAddress = new EmailAddress
+            {
+                Name = name,
+                Address = address,
+            },
+        };
+
+    private static User CreateMemberUser(string id, string displayName) =>
+        new()
+        {
+            OdataType = "#microsoft.graph.user",
+            Id = id,
+            DisplayName = displayName,
+            Mail = $"{id}@contoso.example",
+        };
+
+    private static PhysicalAddress CreateAddress(string street, string city, string countryOrRegion, string postalCode) =>
+        new()
+        {
+            Street = street,
+            City = city,
+            CountryOrRegion = countryOrRegion,
+            PostalCode = postalCode,
+        };
+
+    private static IdentitySet CreateIdentitySet(string displayName, string id) =>
+        new()
+        {
+            User = new Identity
+            {
+                DisplayName = displayName,
+                Id = id,
+            },
+        };
+
+    private static string CreateLongText(string sentence, int repetitions) =>
+        string.Join(' ', Enumerable.Repeat(sentence, repetitions));
+}

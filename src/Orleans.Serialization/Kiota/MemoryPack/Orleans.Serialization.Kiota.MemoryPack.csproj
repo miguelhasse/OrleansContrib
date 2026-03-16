@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Kiota.Serialization.MemoryPack.Orleans</RootNamespace>
+    <AssemblyName>Kiota.Serialization.MemoryPack.Orleans</AssemblyName>
+    <Description>Orleans serialization codec for Kiota IParsable models using MemoryPack.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+	  <_Parameter1>Orleans.Serialization.Kiota.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\BrotliCodec.cs" />
+    <Compile Include="..\Shared\ParsableFactoryHelper.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MemoryPack" />
+    <PackageReference Include="Microsoft.Kiota.Abstractions" />
+    <PackageReference Include="Microsoft.Orleans.Serialization" />
+  </ItemGroup>
+
+</Project>

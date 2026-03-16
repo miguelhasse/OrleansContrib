@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Orleans.Serialization/Kiota/MemoryPack/Orleans.Serialization.Kiota.MemoryPack.csproj" />
+    <Project Path="src/Orleans.Serialization/Kiota/MessagePack/Orleans.Serialization.Kiota.MessagePack.csproj" />
+    <Project Path="src/Orleans.Serialization/Kiota/SystemTextJson/Orleans.Serialization.Kiota.SystemTextJson.csproj" />
+  </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Orleans.Serialization/Kiota/Orleans.Serialization.Kiota.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Orleans.Serialization/Kiota/Orleans.Serialization.Kiota.Tests.csproj" />
+  </Folder>
+</Solution>
