@@ -26,6 +26,17 @@ public enum GraphEntityKind
     Team,
 }
 
+public enum GraphEntityCollectionShape
+{
+    PrimitiveAndObjectCollections,
+    AttachmentHeavyCollections,
+    SchedulingCollections,
+    DirectoryCollections,
+    MostlyPrimitiveCollections,
+    HierarchicalCollections,
+    NestedAggregateCollections,
+}
+
 public sealed class KiotaCodecHarness : IDisposable
 {
     private readonly ServiceProvider _serviceProvider;
@@ -97,6 +108,18 @@ public static class GraphEntitySamples
         GraphEntityKind.Contact => CreateContact(),
         GraphEntityKind.DriveItem => CreateDriveItem(),
         GraphEntityKind.Team => CreateTeam(),
+        _ => throw new ArgumentOutOfRangeException(nameof(entityKind), entityKind, "Unknown graph entity kind."),
+    };
+
+    public static GraphEntityCollectionShape GetCollectionShape(GraphEntityKind entityKind) => entityKind switch
+    {
+        GraphEntityKind.User => GraphEntityCollectionShape.PrimitiveAndObjectCollections,
+        GraphEntityKind.Message => GraphEntityCollectionShape.AttachmentHeavyCollections,
+        GraphEntityKind.Event => GraphEntityCollectionShape.SchedulingCollections,
+        GraphEntityKind.Group => GraphEntityCollectionShape.DirectoryCollections,
+        GraphEntityKind.Contact => GraphEntityCollectionShape.MostlyPrimitiveCollections,
+        GraphEntityKind.DriveItem => GraphEntityCollectionShape.HierarchicalCollections,
+        GraphEntityKind.Team => GraphEntityCollectionShape.NestedAggregateCollections,
         _ => throw new ArgumentOutOfRangeException(nameof(entityKind), entityKind, "Unknown graph entity kind."),
     };
 

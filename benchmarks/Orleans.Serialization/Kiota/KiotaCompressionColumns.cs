@@ -1,6 +1,5 @@
 using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Configs;
-using BenchmarkDotNet.Order;
 using BenchmarkDotNet.Reports;
 using BenchmarkDotNet.Running;
 using Orleans.Serialization.Kiota.Testing;
@@ -14,10 +13,10 @@ internal sealed class KiotaCompressionBenchmarkConfig : ManualConfig
     public KiotaCompressionBenchmarkConfig()
     {
         AddColumnProvider(DefaultColumnProviders.Instance);
+        AddColumn(new CollectionShapeColumn());
         AddColumn(new PayloadSizeColumn(compressed: false));
         AddColumn(new PayloadSizeColumn(compressed: true));
         AddColumn(new CompressionRatioColumn());
-        Orderer = new DefaultOrderer(SummaryOrderPolicy.FastestToSlowest);
     }
 }
 
@@ -46,6 +45,27 @@ internal static class CompressionMetricsCache
 
             return new CompressionMetrics(uncompressed.Length, compressed.Length);
         });
+}
+
+internal sealed class CollectionShapeColumn : IColumn
+{
+    public string Id => "KiotaCollectionShape";
+    public string ColumnName => "Collection Shape";
+    public string Legend => "The dominant collection pattern represented by the benchmarked entity.";
+    public bool AlwaysShow => true;
+    public ColumnCategory Category => ColumnCategory.Custom;
+    public int PriorityInCategory => 0;
+    public bool IsNumeric => false;
+    public UnitType UnitType => UnitType.Dimensionless;
+
+    public string GetValue(Summary summary, BenchmarkCase benchmarkCase) => GetValue(summary, benchmarkCase, SummaryStyle.Default);
+
+    public string GetValue(Summary summary, BenchmarkCase benchmarkCase, SummaryStyle style) =>
+        GraphEntitySamples.GetCollectionShape((GraphEntityKind)benchmarkCase.Parameters[nameof(KiotaCodecCompressionBenchmarks.EntityKind)]!).ToString();
+
+    public bool IsAvailable(Summary summary) => true;
+
+    public bool IsDefault(Summary summary, BenchmarkCase benchmarkCase) => false;
 }
 
 internal sealed class PayloadSizeColumn(bool compressed) : IColumn

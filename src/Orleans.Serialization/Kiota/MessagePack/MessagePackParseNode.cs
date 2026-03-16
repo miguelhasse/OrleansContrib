@@ -195,42 +195,69 @@ internal class MessagePackParseNode : IParseNode
     public IEnumerable<T> GetCollectionOfObjectValues<T>(ParsableFactory<T> factory)
         where T : IParsable
     {
-        if (_value is not List<object?> list)
-            yield break;
+        if (_value is null)
+            return default!;
 
+        if (_value is not List<object?> list)
+            return [];
+
+        var result = new List<T>(list.Count);
         foreach (var item in list)
         {
             var node = new MessagePackParseNode(item);
             var parsed = node.GetObjectValue(factory);
             if (parsed is not null)
-                yield return parsed;
+                result.Add(parsed);
         }
+
+        return result;
     }
 
     public IEnumerable<T> GetCollectionOfPrimitiveValues<T>()
     {
-        if (_value is not List<object?> list)
-            yield break;
+        if (_value is null)
+            return default!;
 
+        if (_value is not List<object?> list)
+            return [];
+
+        var result = new List<T>(list.Count);
         foreach (var item in list)
-            yield return ConvertValue<T>(item)!;
+            result.Add(ConvertValue<T>(item)!);
+
+        return result;
     }
 
     public IEnumerable<T?> GetCollectionOfEnumValues<T>() where T : struct, Enum
     {
-        if (_value is not List<object?> list)
-            yield break;
+        if (_value is null)
+            return default!;
 
+        if (_value is not List<object?> list)
+            return [];
+
+        var result = new List<T?>(list.Count);
         foreach (var item in list)
         {
-            if (item is null) { yield return null; continue; }
-            if (item is string s && Enum.TryParse<T>(s, true, out var fromStr))
-                yield return fromStr;
+            if (item is null)
+            {
+                result.Add(null);
+            }
+            else if (item is string s && Enum.TryParse<T>(s, true, out var fromStr))
+            {
+                result.Add(fromStr);
+            }
             else if (item is long l)
-                yield return (T)Enum.ToObject(typeof(T), l);
+            {
+                result.Add((T)Enum.ToObject(typeof(T), l));
+            }
             else
-                yield return null;
+            {
+                result.Add(null);
+            }
         }
+
+        return result;
     }
 
     public T? GetEnumValue<T>() where T : struct, Enum

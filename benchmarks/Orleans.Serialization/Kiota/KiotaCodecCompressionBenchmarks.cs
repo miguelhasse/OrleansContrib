@@ -13,10 +13,10 @@ public class KiotaCodecCompressionBenchmarks
     private IParsable _value = default!;
 
     [ParamsAllValues]
-    public KiotaCodecKind CodecKind { get; set; }
+    public GraphEntityKind EntityKind { get; set; }
 
     [ParamsAllValues]
-    public GraphEntityKind EntityKind { get; set; }
+    public KiotaCodecKind CodecKind { get; set; }
 
     [GlobalSetup]
     public void Setup()

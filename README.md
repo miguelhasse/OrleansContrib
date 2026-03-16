@@ -66,24 +66,29 @@ Environment:
 - Windows 11 / .NET SDK `10.0.200`
 - Intel Core i9-10900
 
-The expanded `KiotaCodecCompressionBenchmarks` now compares:
+The expanded `KiotaCodecCompressionBenchmarks` compares:
 
 - codec types
 - Graph entity kinds
+- Graph entity collection shapes
 - compressed vs. uncompressed payload sizes
 - compression ratio
 - mean execution time
 - memory allocation
 
-Short-run `SerializeCompressed` examples from the latest generated report:
+The generated BenchmarkDotNet report includes `Collection Shape`, `Uncompressed Bytes`, `Compressed Bytes`, and `Compression Ratio` columns, with rows grouped by `EntityKind` first and `CodecKind` second so each entity family can be compared codec-by-codec.
 
-| Codec | Entity | Mean | Uncompressed | Compressed | Ratio | Allocated |
-|---|---|---:|---:|---:|---:|---:|
-| Json | Message | 61.41 us | 3411 B | 684 B | 79.95% | 1.66 KB |
-| MessagePack | Team | 217.14 us | 10044 B | 2257 B | 77.53% | 79.7 KB |
-| MemoryPack | DriveItem | 127.22 us | 6384 B | 1068 B | 83.27% | 45.21 KB |
+Short-run `SerializeCompressed` comparison excerpt from the latest generated report:
 
-The generated BenchmarkDotNet report now includes `Uncompressed Bytes`, `Compressed Bytes`, and `Compression Ratio` columns to make codec and entity comparisons easier to scan.
+| Collection Shape | Entity | Json Mean / Ratio / Allocated | MessagePack Mean / Ratio / Allocated | MemoryPack Mean / Ratio / Allocated |
+|---|---|---|---|---|
+| PrimitiveAndObjectCollections | User | 48.91 us / 48.52% / 2.52 KB | 139.96 us / 70.17% / 26.68 KB | 152.79 us / 75.94% / 26.91 KB |
+| AttachmentHeavyCollections | Message | 63.83 us / 79.95% / 1.66 KB | 78.89 us / 77.53% / 18.86 KB | 96.17 us / 77.82% / 22.2 KB |
+| SchedulingCollections | Event | 53.47 us / 68.22% / 1.64 KB | 82.30 us / 63.10% / 17.28 KB | 117.21 us / 68.04% / 18 KB |
+| DirectoryCollections | Group | 49.03 us / 68.86% / 3.78 KB | 168.39 us / 78.99% / 56.66 KB | 183.65 us / 82.85% / 65.19 KB |
+| MostlyPrimitiveCollections | Contact | 37.31 us / 48.34% / 1.16 KB | 53.23 us / 44.23% / 6.75 KB | 58.96 us / 57.11% / 6.75 KB |
+| HierarchicalCollections | DriveItem | 55.92 us / 71.73% / 5.48 KB | 126.17 us / 77.99% / 31.3 KB | 168.31 us / 83.27% / 45.21 KB |
+| NestedAggregateCollections | Team | 108.20 us / 71.50% / 4.63 KB | 231.69 us / 77.53% / 79.7 KB | 250.37 us / 81.56% / 108.84 KB |
 
 ## Documentation
 

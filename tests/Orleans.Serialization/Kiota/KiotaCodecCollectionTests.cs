@@ -1,3 +1,4 @@
+using Microsoft.Graph.Models;
 using Microsoft.Kiota.Abstractions.Serialization;
 using Orleans.Serialization.Kiota.Testing;
 
@@ -16,34 +17,7 @@ public sealed class KiotaCodecCollectionTests
             { KiotaCodecKind.MemoryPack, true },
         };
 
-    public static TheoryData<KiotaCodecKind, GraphEntityKind, bool> CollectionEntityCases =>
-        new()
-        {
-            { KiotaCodecKind.Json, GraphEntityKind.User, false },
-            { KiotaCodecKind.Json, GraphEntityKind.User, true },
-            { KiotaCodecKind.Json, GraphEntityKind.Message, false },
-            { KiotaCodecKind.Json, GraphEntityKind.Message, true },
-            { KiotaCodecKind.Json, GraphEntityKind.Group, false },
-            { KiotaCodecKind.Json, GraphEntityKind.Group, true },
-            { KiotaCodecKind.Json, GraphEntityKind.Contact, false },
-            { KiotaCodecKind.Json, GraphEntityKind.Contact, true },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.User, false },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.User, true },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Message, false },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Message, true },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Group, false },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Group, true },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Contact, false },
-            { KiotaCodecKind.MessagePack, GraphEntityKind.Contact, true },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.User, false },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.User, true },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Message, false },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Message, true },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Group, false },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Group, true },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Contact, false },
-            { KiotaCodecKind.MemoryPack, GraphEntityKind.Contact, true },
-        };
+    public static TheoryData<KiotaCodecKind, GraphEntityKind, bool> CollectionEntityCases => CreateCollectionEntityCases();
 
     [Theory]
     [MemberData(nameof(CodecCompressionCases))]
@@ -101,6 +75,22 @@ public sealed class KiotaCodecCollectionTests
 
         GraphEntityAssert.Equal(expected, actual);
         Assert.NotSame(expected, actual);
+        AssertGraphEntityCollectionsDetached(expected, actual, entityKind);
+    }
+
+    [Theory]
+    [MemberData(nameof(CollectionEntityCases))]
+    public void Deep_copier_round_trips_collection_graph_entities(KiotaCodecKind codecKind, GraphEntityKind entityKind, bool compression)
+    {
+        var expected = GraphEntitySamples.Create(entityKind);
+
+        using var harness = KiotaCodecHarnessFactory.Create(codecKind, compression);
+
+        var copy = Assert.IsAssignableFrom<IParsable>(harness.ObjectDeepCopier.Copy(expected));
+
+        GraphEntityAssert.Equal(expected, copy);
+        Assert.NotSame(expected, copy);
+        AssertGraphEntityCollectionsDetached(expected, copy, entityKind);
     }
 
     private static KiotaCollectionTestModel CreateCollectionTestModel() =>
@@ -148,5 +138,167 @@ public sealed class KiotaCodecCollectionTests
         Assert.Equal(expected.EmptyTags, actual.EmptyTags);
         Assert.Equal(expected.EmptyItems, actual.EmptyItems);
         Assert.Equal(expected.EmptyStates, actual.EmptyStates);
+    }
+
+    private static TheoryData<KiotaCodecKind, GraphEntityKind, bool> CreateCollectionEntityCases()
+    {
+        var cases = new TheoryData<KiotaCodecKind, GraphEntityKind, bool>();
+
+        foreach (var codecKind in Enum.GetValues<KiotaCodecKind>())
+        {
+            foreach (var entityKind in Enum.GetValues<GraphEntityKind>())
+            {
+                cases.Add(codecKind, entityKind, false);
+                cases.Add(codecKind, entityKind, true);
+            }
+        }
+
+        return cases;
+    }
+
+    private static void AssertGraphEntityCollectionsDetached(IParsable expected, IParsable actual, GraphEntityKind entityKind)
+    {
+        switch (entityKind)
+        {
+            case GraphEntityKind.User:
+                AssertUserCollectionsDetached(Assert.IsType<User>(expected), Assert.IsType<User>(actual));
+                break;
+            case GraphEntityKind.Message:
+                AssertMessageCollectionsDetached(Assert.IsType<Message>(expected), Assert.IsType<Message>(actual));
+                break;
+            case GraphEntityKind.Event:
+                AssertEventCollectionsDetached(Assert.IsType<Event>(expected), Assert.IsType<Event>(actual));
+                break;
+            case GraphEntityKind.Group:
+                AssertGroupCollectionsDetached(Assert.IsType<Group>(expected), Assert.IsType<Group>(actual));
+                break;
+            case GraphEntityKind.Contact:
+                AssertContactCollectionsDetached(Assert.IsType<Contact>(expected), Assert.IsType<Contact>(actual));
+                break;
+            case GraphEntityKind.DriveItem:
+                AssertDriveItemCollectionsDetached(Assert.IsType<DriveItem>(expected), Assert.IsType<DriveItem>(actual));
+                break;
+            case GraphEntityKind.Team:
+                AssertTeamCollectionsDetached(Assert.IsType<Team>(expected), Assert.IsType<Team>(actual));
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(entityKind), entityKind, "Unknown graph entity kind.");
+        }
+    }
+
+    private static void AssertUserCollectionsDetached(User expected, User actual)
+    {
+        Assert.NotSame(expected.BusinessPhones, actual.BusinessPhones);
+        Assert.NotSame(expected.Identities, actual.Identities);
+        Assert.NotSame(expected.Manager, actual.Manager);
+
+        for (var index = 0; index < expected.Identities!.Count; index++)
+        {
+            Assert.NotSame(expected.Identities[index], actual.Identities![index]);
+        }
+    }
+
+    private static void AssertMessageCollectionsDetached(Message expected, Message actual)
+    {
+        Assert.NotSame(expected.ToRecipients, actual.ToRecipients);
+        Assert.NotSame(expected.ReplyTo, actual.ReplyTo);
+        Assert.NotSame(expected.InternetMessageHeaders, actual.InternetMessageHeaders);
+        Assert.NotSame(expected.Attachments, actual.Attachments);
+
+        for (var index = 0; index < expected.ToRecipients!.Count; index++)
+        {
+            Assert.NotSame(expected.ToRecipients[index], actual.ToRecipients![index]);
+        }
+
+        for (var index = 0; index < expected.ReplyTo!.Count; index++)
+        {
+            Assert.NotSame(expected.ReplyTo[index], actual.ReplyTo![index]);
+        }
+
+        for (var index = 0; index < expected.InternetMessageHeaders!.Count; index++)
+        {
+            Assert.NotSame(expected.InternetMessageHeaders[index], actual.InternetMessageHeaders![index]);
+        }
+
+        for (var index = 0; index < expected.Attachments!.Count; index++)
+        {
+            Assert.NotSame(expected.Attachments[index], actual.Attachments![index]);
+        }
+
+        var expectedFirstAttachment = Assert.IsType<FileAttachment>(expected.Attachments[0]);
+        var actualFirstAttachment = Assert.IsType<FileAttachment>(actual.Attachments![0]);
+        Assert.NotSame(expectedFirstAttachment.ContentBytes, actualFirstAttachment.ContentBytes);
+    }
+
+    private static void AssertEventCollectionsDetached(Event expected, Event actual)
+    {
+        Assert.NotSame(expected.Attendees, actual.Attendees);
+        Assert.NotSame(expected.Locations, actual.Locations);
+
+        for (var index = 0; index < expected.Attendees!.Count; index++)
+        {
+            Assert.NotSame(expected.Attendees[index], actual.Attendees![index]);
+        }
+
+        for (var index = 0; index < expected.Locations!.Count; index++)
+        {
+            Assert.NotSame(expected.Locations[index], actual.Locations![index]);
+        }
+    }
+
+    private static void AssertGroupCollectionsDetached(Group expected, Group actual)
+    {
+        Assert.NotSame(expected.GroupTypes, actual.GroupTypes);
+        Assert.NotSame(expected.Members, actual.Members);
+        Assert.NotSame(expected.Owners, actual.Owners);
+
+        for (var index = 0; index < expected.Members!.Count; index++)
+        {
+            Assert.NotSame(expected.Members[index], actual.Members![index]);
+        }
+
+        for (var index = 0; index < expected.Owners!.Count; index++)
+        {
+            Assert.NotSame(expected.Owners[index], actual.Owners![index]);
+        }
+    }
+
+    private static void AssertContactCollectionsDetached(Contact expected, Contact actual)
+    {
+        Assert.NotSame(expected.EmailAddresses, actual.EmailAddresses);
+        Assert.NotSame(expected.BusinessPhones, actual.BusinessPhones);
+        Assert.NotSame(expected.HomePhones, actual.HomePhones);
+        Assert.NotSame(expected.Categories, actual.Categories);
+        Assert.NotSame(expected.Children, actual.Children);
+
+        for (var index = 0; index < expected.EmailAddresses!.Count; index++)
+        {
+            Assert.NotSame(expected.EmailAddresses[index], actual.EmailAddresses![index]);
+        }
+    }
+
+    private static void AssertDriveItemCollectionsDetached(DriveItem expected, DriveItem actual)
+    {
+        var expectedChildren = Assert.IsAssignableFrom<IReadOnlyList<DriveItem>>(expected.Children);
+        var actualChildren = Assert.IsAssignableFrom<IReadOnlyList<DriveItem>>(actual.Children);
+
+        Assert.NotSame(expectedChildren, actualChildren);
+
+        for (var index = 0; index < expectedChildren.Count; index++)
+        {
+            Assert.NotSame(expectedChildren[index], actualChildren[index]);
+        }
+
+        var expectedNestedFolder = expectedChildren[1];
+        var actualNestedFolder = actualChildren[1];
+
+        Assert.NotSame(expectedNestedFolder.Children, actualNestedFolder.Children);
+        Assert.NotSame(expectedNestedFolder.Children![0], actualNestedFolder.Children![0]);
+    }
+
+    private static void AssertTeamCollectionsDetached(Team expected, Team actual)
+    {
+        Assert.NotSame(expected.Group, actual.Group);
+        AssertGroupCollectionsDetached(expected.Group!, actual.Group!);
     }
 }
