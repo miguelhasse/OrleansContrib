@@ -41,53 +41,43 @@ dotnet run --project .\benchmarks\Orleans.Serialization\Kiota\Orleans.Serializat
 
 BenchmarkDotNet writes reports under the repository-level `BenchmarkDotNet.Artifacts` directory.
 
-`KiotaCodecCompressionBenchmarks` also adds comparison columns for:
+The most recent validation run produced:
 
-- collection shape
-- uncompressed payload bytes
-- compressed payload bytes
-- compression ratio
+- `BenchmarkDotNet.Artifacts\results\Orleans.Serialization.Kiota.Benchmarks.KiotaCodecPerformanceBenchmarks-report-github.md`
+- `BenchmarkDotNet.Artifacts\results\Orleans.Serialization.Kiota.Benchmarks.KiotaCodecPerformanceBenchmarks-report.csv`
+- `BenchmarkDotNet.Artifacts\results\Orleans.Serialization.Kiota.Benchmarks.KiotaCodecPerformanceBenchmarks-report.html`
 
-This makes the generated report easier to compare across codec types for each entity and for each collection shape while BenchmarkDotNet continues to report mean time and allocations.
+That report covers `Serialize`, `Deserialize`, and `DeepCopy` across all codec kinds, all sample entity kinds, and both compression modes.
 
-The generated compression report now includes a `Collection Shape` column and keeps rows grouped by entity first so the three codec results are easier to compare side by side within the same entity family, including the `ConversationCollections` and `InteractionCollections` shapes introduced by the chat samples.
+`KiotaCodecCompressionBenchmarks` still adds comparison columns for `Collection Shape`, `Uncompressed Bytes`, `Compressed Bytes`, and `Compression Ratio` when you run the compression-focused filter.
 
-The short-run report generated during validation currently includes compressed serialization comparisons for every Graph sample entity, grouped by collection shape and then by codec within each entity:
+Latest `Serialize` excerpt with compression disabled (`mean / allocated`):
 
-| Collection Shape | Entity | Codec | Mean | Uncompressed | Compressed | Ratio | Allocated |
-|---|---|---|---:|---:|---:|---:|---:|
-| PrimitiveAndObjectCollections | User | Json | 38.05 us | 742 B | 382 B | 48.52% | 2.52 KB |
-| PrimitiveAndObjectCollections | User | MessagePack | 122.93 us | 4878 B | 1455 B | 70.17% | 26.68 KB |
-| PrimitiveAndObjectCollections | User | MemoryPack | 138.30 us | 7044 B | 1697 B | 75.91% | 26.92 KB |
-| AttachmentHeavyCollections | Message | Json | 60.89 us | 3411 B | 684 B | 79.95% | 1.66 KB |
-| AttachmentHeavyCollections | Message | MessagePack | 68.61 us | 3654 B | 821 B | 77.53% | 18.86 KB |
-| AttachmentHeavyCollections | Message | MemoryPack | 81.35 us | 4499 B | 1000 B | 77.77% | 22.2 KB |
-| ConversationCollections | Chat | Json | 126.42 us | 5177 B | 1172 B | 77.36% | 5.63 KB |
-| ConversationCollections | Chat | MessagePack | 220.62 us | 9821 B | 2454 B | 75.01% | 92.93 KB |
-| ConversationCollections | Chat | MemoryPack | 255.36 us | 13899 B | 2889 B | 79.21% | 96.13 KB |
-| InteractionCollections | ChatMessage | Json | 75.14 us | 3235 B | 851 B | 73.69% | 2.75 KB |
-| InteractionCollections | ChatMessage | MessagePack | 100.76 us | 3594 B | 977 B | 72.82% | 22.56 KB |
-| InteractionCollections | ChatMessage | MemoryPack | 102.61 us | 5013 B | 1205 B | 75.96% | 27.88 KB |
-| SchedulingCollections | Event | Json | 48.51 us | 1712 B | 544 B | 68.22% | 1.64 KB |
-| SchedulingCollections | Event | MessagePack | 80.27 us | 2615 B | 965 B | 63.10% | 17.28 KB |
-| SchedulingCollections | Event | MemoryPack | 98.72 us | 3655 B | 1170 B | 67.99% | 18.01 KB |
-| DirectoryCollections | Group | Json | 50.61 us | 1294 B | 403 B | 68.86% | 3.78 KB |
-| DirectoryCollections | Group | MessagePack | 194.11 us | 8743 B | 1837 B | 78.99% | 56.66 KB |
-| DirectoryCollections | Group | MemoryPack | 184.55 us | 12286 B | 2109 B | 82.83% | 65.19 KB |
-| MostlyPrimitiveCollections | Contact | Json | 41.30 us | 902 B | 466 B | 48.34% | 1.16 KB |
-| MostlyPrimitiveCollections | Contact | MessagePack | 81.78 us | 1248 B | 696 B | 44.23% | 6.75 KB |
-| MostlyPrimitiveCollections | Contact | MemoryPack | 91.07 us | 1994 B | 857 B | 57.02% | 6.76 KB |
-| HierarchicalCollections | DriveItem | Json | 60.03 us | 1868 B | 528 B | 71.73% | 5.48 KB |
-| HierarchicalCollections | DriveItem | MessagePack | 118.50 us | 4008 B | 882 B | 77.99% | 31.3 KB |
-| HierarchicalCollections | DriveItem | MemoryPack | 130.19 us | 6387 B | 1071 B | 83.23% | 45.21 KB |
-| NestedAggregateCollections | Team | Json | 73.83 us | 2249 B | 641 B | 71.50% | 4.63 KB |
-| NestedAggregateCollections | Team | MessagePack | 218.65 us | 10044 B | 2257 B | 77.53% | 79.7 KB |
-| NestedAggregateCollections | Team | MemoryPack | 233.72 us | 14035 B | 2590 B | 81.55% | 108.84 KB |
+| Entity | Json | MessagePack | MemoryPack |
+|---|---|---|---|
+| User | 9.432 us / 2.84 KB | 25.277 us / 29.98 KB | 19.977 us / 32.09 KB |
+| Message | 8.024 us / 4.28 KB | 9.865 us / 21.6 KB | 9.006 us / 25.58 KB |
+| Chat | 34.639 us / 9.49 KB | 59.228 us / 100.08 KB | 51.622 us / 106.83 KB |
+| ChatMessage | 11.983 us / 5.05 KB | 16.148 us / 25.09 KB | 15.414 us / 31.55 KB |
+| Event | 6.513 us / 2.76 KB | 12.596 us / 18.87 KB | 10.799 us / 20.41 KB |
+| Group | 14.650 us / 4.63 KB | 42.360 us / 63.35 KB | 34.181 us / 75.08 KB |
+| Contact | 4.866 us / 1.55 KB | 6.807 us / 7.27 KB | 5.828 us / 7.84 KB |
+| DriveItem | 13.833 us / 6.77 KB | 23.887 us / 34.33 KB | 22.897 us / 50.36 KB |
+| Team | 21.915 us / 6.18 KB | 49.072 us / 87.26 KB | 45.400 us / 119.98 KB |
 
-Example output files:
+Latest `Serialize` excerpt with compression enabled (`mean / allocated`):
 
-- `BenchmarkDotNet.Artifacts\results\Orleans.Serialization.Kiota.Benchmarks.KiotaCodecCompressionBenchmarks-report-github.md`
-- `BenchmarkDotNet.Artifacts\results\Orleans.Serialization.Kiota.Benchmarks.KiotaCodecCompressionBenchmarks-report.csv`
+| Entity | Json | MessagePack | MemoryPack |
+|---|---|---|---|
+| User | 37.848 us / 2.52 KB | 121.906 us / 26.68 KB | 130.072 us / 26.92 KB |
+| Message | 56.704 us / 1.66 KB | 70.191 us / 18.86 KB | 82.835 us / 22.2 KB |
+| Chat | 127.390 us / 5.63 KB | 206.301 us / 92.93 KB | 236.326 us / 96.13 KB |
+| ChatMessage | 80.765 us / 2.75 KB | 91.718 us / 22.56 KB | 107.829 us / 27.88 KB |
+| Event | 47.135 us / 1.64 KB | 79.824 us / 17.28 KB | 98.975 us / 18.01 KB |
+| Group | 46.320 us / 3.78 KB | 165.173 us / 56.66 KB | 185.463 us / 65.19 KB |
+| Contact | 34.975 us / 1.16 KB | 51.255 us / 6.75 KB | 66.047 us / 6.76 KB |
+| DriveItem | 53.836 us / 5.48 KB | 95.077 us / 31.3 KB | 120.819 us / 45.21 KB |
+| Team | 73.457 us / 4.63 KB | 193.695 us / 79.7 KB | 218.494 us / 108.84 KB |
 
 ## Related documentation
 

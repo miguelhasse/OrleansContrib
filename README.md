@@ -58,39 +58,40 @@ dotnet run --project .\benchmarks\Orleans.Serialization\Kiota\Orleans.Serializat
 
 ## Benchmark report
 
-Latest generated BenchmarkDotNet compression results are available under `BenchmarkDotNet.Artifacts\results`.
+Latest generated BenchmarkDotNet results are available under `BenchmarkDotNet.Artifacts\results`. The most recent validation run produced `Orleans.Serialization.Kiota.Benchmarks.KiotaCodecPerformanceBenchmarks-report-github.md`.
 
 Environment:
 
 - BenchmarkDotNet `0.15.8`
-- Windows 11 / .NET SDK `10.0.200`
-- Intel Core i9-10900
+- Windows 11 `10.0.26200.8037` / .NET SDK `10.0.200`
+- Intel Core i9-10900 CPU 2.80GHz
 
-The expanded `KiotaCodecCompressionBenchmarks` compares:
+The latest `KiotaCodecPerformanceBenchmarks` run compares:
 
+- `Serialize`, `Deserialize`, and `DeepCopy`
 - codec types
+- compression disabled and enabled
 - Graph entity kinds
-- Graph entity collection shapes
-- compressed vs. uncompressed payload sizes
-- compression ratio
 - mean execution time
 - memory allocation
 
-The generated BenchmarkDotNet report includes `Collection Shape`, `Uncompressed Bytes`, `Compressed Bytes`, and `Compression Ratio` columns, with rows grouped by `EntityKind` first and `CodecKind` second so each entity family can be compared codec-by-codec.
+`KiotaCodecCompressionBenchmarks` is still available for payload-size-focused runs, but the most recent published artifact is the full performance report.
 
-Short-run `SerializeCompressed` comparison excerpt from the latest generated report:
+`Serialize` comparison excerpt from the latest generated performance report (`mean`, compression off/on):
 
-| Collection Shape | Entity | Json Mean / Ratio / Allocated | MessagePack Mean / Ratio / Allocated | MemoryPack Mean / Ratio / Allocated |
-|---|---|---|---|---|
-| PrimitiveAndObjectCollections | User | 38.05 us / 48.52% / 2.52 KB | 122.93 us / 70.17% / 26.68 KB | 138.30 us / 75.91% / 26.92 KB |
-| AttachmentHeavyCollections | Message | 60.89 us / 79.95% / 1.66 KB | 68.61 us / 77.53% / 18.86 KB | 81.35 us / 77.77% / 22.2 KB |
-| ConversationCollections | Chat | 126.42 us / 77.36% / 5.63 KB | 220.62 us / 75.01% / 92.93 KB | 255.36 us / 79.21% / 96.13 KB |
-| InteractionCollections | ChatMessage | 75.14 us / 73.69% / 2.75 KB | 100.76 us / 72.82% / 22.56 KB | 102.61 us / 75.96% / 27.88 KB |
-| SchedulingCollections | Event | 48.51 us / 68.22% / 1.64 KB | 80.27 us / 63.10% / 17.28 KB | 98.72 us / 67.99% / 18.01 KB |
-| DirectoryCollections | Group | 50.61 us / 68.86% / 3.78 KB | 194.11 us / 78.99% / 56.66 KB | 184.55 us / 82.83% / 65.19 KB |
-| MostlyPrimitiveCollections | Contact | 41.30 us / 48.34% / 1.16 KB | 81.78 us / 44.23% / 6.75 KB | 91.07 us / 57.02% / 6.76 KB |
-| HierarchicalCollections | DriveItem | 60.03 us / 71.73% / 5.48 KB | 118.50 us / 77.99% / 31.3 KB | 130.19 us / 83.23% / 45.21 KB |
-| NestedAggregateCollections | Team | 73.83 us / 71.50% / 4.63 KB | 218.65 us / 77.53% / 79.7 KB | 233.72 us / 81.55% / 108.84 KB |
+| Entity | Json | MessagePack | MemoryPack |
+|---|---|---|---|
+| User | 9.432 / 37.848 us | 25.277 / 121.906 us | 19.977 / 130.072 us |
+| Message | 8.024 / 56.704 us | 9.865 / 70.191 us | 9.006 / 82.835 us |
+| Chat | 34.639 / 127.390 us | 59.228 / 206.301 us | 51.622 / 236.326 us |
+| ChatMessage | 11.983 / 80.765 us | 16.148 / 91.718 us | 15.414 / 107.829 us |
+| Event | 6.513 / 47.135 us | 12.596 / 79.824 us | 10.799 / 98.975 us |
+| Group | 14.650 / 46.320 us | 42.360 / 165.173 us | 34.181 / 185.463 us |
+| Contact | 4.866 / 34.975 us | 6.807 / 51.255 us | 5.828 / 66.047 us |
+| DriveItem | 13.833 / 53.836 us | 23.887 / 95.077 us | 22.897 / 120.819 us |
+| Team | 21.915 / 73.457 us | 49.072 / 193.695 us | 45.400 / 218.494 us |
+
+The full report also captures allocation data for every `Serialize`, `Deserialize`, and `DeepCopy` run, plus HTML and CSV exports in the same results folder.
 
 ## Documentation
 
