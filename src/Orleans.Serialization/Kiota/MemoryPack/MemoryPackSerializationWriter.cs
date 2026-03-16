@@ -2,6 +2,7 @@ using MemoryPack;
 using Microsoft.Kiota.Abstractions;
 using Microsoft.Kiota.Abstractions.Serialization;
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Globalization;
 
 namespace Orleans.Serialization;
@@ -50,12 +51,20 @@ internal enum ValueTag : byte
 /// is obtained from <see cref="MemoryPackSerializationWriterFactory"/>).
 /// </para>
 /// </remarks>
-internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) : ISerializationWriter
+internal class MemoryPackSerializationWriter : ISerializationWriter
 {
+    private readonly IBufferWriter<byte> _outputBuffer;
+    private static readonly ConcurrentStack<ArrayBufferWriter<byte>> s_tempBufferPool = new();
+
     // Counts the key-value pairs written directly to outputBuffer.
     // Parent writers read this after serializing an object into a temp buffer
     // so they can emit the correct Map property count.
     private int _propertyCount;
+
+    public MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer)
+    {
+        _outputBuffer = outputBuffer;
+    }
 
     public Action<IParsable>? OnBeforeObjectSerialization { get; set; }
 
@@ -183,30 +192,24 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
             return;
         }
 
-        // Serialize all properties into a temporary buffer so we can determine
-        // the property count required by the Map header before emitting any bytes.
-        var tempBuf = new ArrayBufferWriter<byte>();
-        var tempWriter = CreateChildWriter(tempBuf);
+        WriteBufferedMap(
+            key,
+            tempWriter =>
+            {
+                if (value is not null)
+                {
+                    OnBeforeObjectSerialization?.Invoke(value);
+                    OnStartObjectSerialization?.Invoke(value, tempWriter);
+                    value.Serialize(tempWriter);
+                    OnAfterObjectSerialization?.Invoke(value);
+                }
 
-        if (value is not null)
-        {
-            OnBeforeObjectSerialization?.Invoke(value);
-            OnStartObjectSerialization?.Invoke(value, tempWriter);
-            value.Serialize(tempWriter);
-            OnAfterObjectSerialization?.Invoke(value);
-        }
-
-        if (additionalValuesToMerge is not null)
-        {
-            foreach (var additional in additionalValuesToMerge)
-                additional?.Serialize(tempWriter);
-        }
-
-        // Write: key (if any), Tag.Map, property count, then the buffered bytes.
-        WriteKey(key);
-        WriteTag(ValueTag.Map);
-        WriteSerializedValue(tempWriter._propertyCount);
-        WriteRawBytes(tempBuf.WrittenSpan);
+                if (additionalValuesToMerge is not null)
+                {
+                    foreach (var additional in additionalValuesToMerge)
+                        additional?.Serialize(tempWriter);
+                }
+            });
     }
 
     public void WriteCollectionOfObjectValues<T>(string? key, IEnumerable<T>? values)
@@ -230,14 +233,7 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         WriteSerializedValue(count);
 
         foreach (var item in values)
-        {
-            var tempBuf = new ArrayBufferWriter<byte>();
-            var tempWriter = CreateChildWriter(tempBuf);
-            item?.Serialize(tempWriter);
-            WriteTag(ValueTag.Map);
-            WriteSerializedValue(tempWriter._propertyCount);
-            WriteRawBytes(tempBuf.WrittenSpan);
-        }
+            WriteBufferedMap(null, tempWriter => item?.Serialize(tempWriter));
     }
 
     public void WriteCollectionOfPrimitiveValues<T>(string? key, IEnumerable<T>? values)
@@ -307,9 +303,9 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
 
     private void WriteTag(ValueTag tag)
     {
-        var span = outputBuffer.GetSpan(1);
+        var span = _outputBuffer.GetSpan(1);
         span[0] = (byte)tag;
-        outputBuffer.Advance(1);
+        _outputBuffer.Advance(1);
     }
 
     /// <summary>
@@ -326,15 +322,43 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
     private void WriteRawBytes(ReadOnlySpan<byte> bytes)
     {
         if (bytes.IsEmpty) return;
-        var dest = outputBuffer.GetSpan(bytes.Length);
+        var dest = _outputBuffer.GetSpan(bytes.Length);
         bytes.CopyTo(dest);
-        outputBuffer.Advance(bytes.Length);
+        _outputBuffer.Advance(bytes.Length);
     }
 
     private void WriteSerializedValue<T>(T value)
     {
-        var destination = outputBuffer;
+        var destination = _outputBuffer;
         MemoryPackSerializer.Serialize<T, IBufferWriter<byte>>(in destination, in value);
+    }
+
+    private void WriteBufferedMap(string? key, Action<MemoryPackSerializationWriter> writeProperties)
+    {
+        var tempBuffer = RentTempBuffer();
+        try
+        {
+            var tempWriter = CreateChildWriter(tempBuffer);
+            writeProperties(tempWriter);
+
+            WriteKey(key);
+            WriteTag(ValueTag.Map);
+            WriteSerializedValue(tempWriter._propertyCount);
+            WriteRawBytes(tempBuffer.WrittenSpan);
+        }
+        finally
+        {
+            ReturnTempBuffer(tempBuffer);
+        }
+    }
+
+    private ArrayBufferWriter<byte> RentTempBuffer() =>
+        s_tempBufferPool.TryPop(out var tempBuffer) ? tempBuffer : new ArrayBufferWriter<byte>();
+
+    private void ReturnTempBuffer(ArrayBufferWriter<byte> tempBuffer)
+    {
+        tempBuffer.Clear();
+        s_tempBufferPool.Push(tempBuffer);
     }
 
     private MemoryPackSerializationWriter CreateChildWriter(IBufferWriter<byte> buffer) => new(buffer)
@@ -375,14 +399,13 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
                 break;
             case UntypedObject uobj:
                 {
-                    var tempBuf = new ArrayBufferWriter<byte>();
-                    var tempWriter = CreateChildWriter(tempBuf);
-                    foreach (var (k, v) in uobj.GetValue())
-                        tempWriter.WriteAnyValue(k, v);
-                    WriteKey(key);
-                    WriteTag(ValueTag.Map);
-                    WriteSerializedValue(tempWriter._propertyCount);
-                    WriteRawBytes(tempBuf.WrittenSpan);
+                    WriteBufferedMap(
+                        key,
+                        tempWriter =>
+                        {
+                            foreach (var (k, v) in uobj.GetValue())
+                                tempWriter.WriteAnyValue(k, v);
+                        });
                     break;
                 }
             case UntypedArray uarr:
@@ -456,3 +479,4 @@ internal class MemoryPackSerializationWriter(IBufferWriter<byte> outputBuffer) :
         }
     }
 }
+

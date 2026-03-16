@@ -2,6 +2,7 @@ using MessagePack;
 using Microsoft.Kiota.Abstractions;
 using Microsoft.Kiota.Abstractions.Serialization;
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Globalization;
 
 namespace Orleans.Serialization;
@@ -31,12 +32,20 @@ namespace Orleans.Serialization;
 /// through <see cref="OutputBuffer"/> instead.
 /// </para>
 /// </remarks>
-internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) : ISerializationWriter
+internal class MessagePackSerializationWriter : ISerializationWriter
 {
+    private readonly IBufferWriter<byte> _outputBuffer;
+    private static readonly ConcurrentStack<ArrayBufferWriter<byte>> s_tempBufferPool = new();
+
     // Counts the number of top-level key-value pairs written to outputBuffer.
     // The parent writer reads this after serializing an object into a temp buffer
     // so it can emit the correct WriteMapHeader count.
     private int _propertyCount;
+
+    public MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer)
+    {
+        _outputBuffer = outputBuffer;
+    }
 
     public Action<IParsable>? OnBeforeObjectSerialization { get; set; }
 
@@ -55,7 +64,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteStringValue(string? key, string? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil(); else w.Write(value);
         w.Flush();
     }
@@ -63,7 +72,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteBoolValue(string? key, bool? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil(); else w.Write(value.Value);
         w.Flush();
     }
@@ -71,7 +80,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteByteValue(string? key, byte? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil(); else w.Write(value.Value);
         w.Flush();
     }
@@ -79,7 +88,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteSbyteValue(string? key, sbyte? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil(); else w.Write(value.Value);
         w.Flush();
     }
@@ -87,7 +96,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteIntValue(string? key, int? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil(); else w.Write(value.Value);
         w.Flush();
     }
@@ -95,7 +104,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteLongValue(string? key, long? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil(); else w.Write(value.Value);
         w.Flush();
     }
@@ -103,7 +112,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteFloatValue(string? key, float? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil(); else w.Write(value.Value);
         w.Flush();
     }
@@ -111,7 +120,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteDoubleValue(string? key, double? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil(); else w.Write(value.Value);
         w.Flush();
     }
@@ -120,7 +129,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     {
         // Decimal has no native MessagePack type; use string to preserve precision.
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil();
         else w.Write(value.Value.ToString(CultureInfo.InvariantCulture));
         w.Flush();
@@ -129,7 +138,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteGuidValue(string? key, Guid? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil(); else w.Write(value.Value.ToString());
         w.Flush();
     }
@@ -137,7 +146,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteDateTimeOffsetValue(string? key, DateTimeOffset? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil();
         else w.Write(value.Value.ToString("o", CultureInfo.InvariantCulture));
         w.Flush();
@@ -146,7 +155,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteTimeSpanValue(string? key, TimeSpan? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil();
         else w.Write(value.Value.ToString("c", CultureInfo.InvariantCulture));
         w.Flush();
@@ -155,7 +164,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteDateValue(string? key, Date? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil(); else w.Write(value.Value.ToString());
         w.Flush();
     }
@@ -163,7 +172,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteTimeValue(string? key, Time? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil(); else w.Write(value.Value.ToString());
         w.Flush();
     }
@@ -171,7 +180,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteByteArrayValue(string? key, byte[]? value)
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil(); else w.Write(value.AsSpan());
         w.Flush();
     }
@@ -179,13 +188,13 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     public void WriteNullValue(string? key)
     {
         WriteKey(key);
-        WriteNil(outputBuffer);
+        WriteNil(_outputBuffer);
     }
 
     public void WriteEnumValue<T>(string? key, T? value) where T : struct, Enum
     {
         WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (value is null) w.WriteNil();
         else w.Write(Convert.ToInt64(value.Value));
         w.Flush();
@@ -200,31 +209,24 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
             return;
         }
 
-        // Serialize all properties into a temporary buffer so we can determine
-        // the property count required by WriteMapHeader before emitting any bytes.
-        var tempBuf = new ArrayBufferWriter<byte>();
-        var tempWriter = CreateChildWriter(tempBuf);
+        WriteBufferedMap(
+            key,
+            tempWriter =>
+            {
+                if (value is not null)
+                {
+                    OnBeforeObjectSerialization?.Invoke(value);
+                    OnStartObjectSerialization?.Invoke(value, tempWriter);
+                    value.Serialize(tempWriter);
+                    OnAfterObjectSerialization?.Invoke(value);
+                }
 
-        if (value is not null)
-        {
-            OnBeforeObjectSerialization?.Invoke(value);
-            OnStartObjectSerialization?.Invoke(value, tempWriter);
-            value.Serialize(tempWriter);
-            OnAfterObjectSerialization?.Invoke(value);
-        }
-
-        if (additionalValuesToMerge is not null)
-        {
-            foreach (var additional in additionalValuesToMerge)
-                additional?.Serialize(tempWriter);
-        }
-
-        // Write key (if any), map header, then the buffered property bytes.
-        WriteKey(key);
-        var w = new MessagePackWriter(outputBuffer);
-        w.WriteMapHeader(tempWriter._propertyCount);
-        w.WriteRaw(tempBuf.WrittenSpan);
-        w.Flush();
+                if (additionalValuesToMerge is not null)
+                {
+                    foreach (var additional in additionalValuesToMerge)
+                        additional?.Serialize(tempWriter);
+                }
+            });
     }
 
     public void WriteCollectionOfObjectValues<T>(string? key, IEnumerable<T>? values) where T : IParsable
@@ -233,11 +235,11 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
 
         if (values is null)
         {
-            WriteNil(outputBuffer);
+            WriteNil(_outputBuffer);
             return;
         }
 
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         if (!values.TryGetNonEnumeratedCount(out var count))
         {
             values = values.ToList();
@@ -245,17 +247,10 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
         }
 
         w.WriteArrayHeader(count);
+        w.Flush();
 
         foreach (var item in values)
-        {
-            var tempBuf = new ArrayBufferWriter<byte>();
-            var tempWriter = CreateChildWriter(tempBuf);
-            item?.Serialize(tempWriter);
-            w.WriteMapHeader(tempWriter._propertyCount);
-            w.WriteRaw(tempBuf.WrittenSpan);
-        }
-
-        w.Flush();
+            WriteBufferedMap(null, tempWriter => item?.Serialize(tempWriter));
     }
 
     public void WriteCollectionOfPrimitiveValues<T>(string? key, IEnumerable<T>? values)
@@ -264,11 +259,11 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
 
         if (values is null)
         {
-            WriteNil(outputBuffer);
+            WriteNil(_outputBuffer);
             return;
         }
 
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
 
         if (!values.TryGetNonEnumeratedCount(out var count))
         {
@@ -288,11 +283,11 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
 
         if (values is null)
         {
-            WriteNil(outputBuffer);
+            WriteNil(_outputBuffer);
             return;
         }
 
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
 
         if (!values.TryGetNonEnumeratedCount(out var count))
         {
@@ -325,7 +320,7 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     private void WriteKey(string? key)
     {
         if (key is null) return;
-        var w = new MessagePackWriter(outputBuffer);
+        var w = new MessagePackWriter(_outputBuffer);
         w.Write(key);
         w.Flush();
         _propertyCount++;
@@ -373,6 +368,35 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
     /// Creates a child writer that inherits the serialization lifecycle callbacks,
     /// used to serialize nested objects into a temporary buffer.
     /// </summary>
+    private void WriteBufferedMap(string? key, Action<MessagePackSerializationWriter> writeProperties)
+    {
+        var tempBuffer = RentTempBuffer();
+        try
+        {
+            var tempWriter = CreateChildWriter(tempBuffer);
+            writeProperties(tempWriter);
+
+            WriteKey(key);
+            var w = new MessagePackWriter(_outputBuffer);
+            w.WriteMapHeader(tempWriter._propertyCount);
+            w.WriteRaw(tempBuffer.WrittenSpan);
+            w.Flush();
+        }
+        finally
+        {
+            ReturnTempBuffer(tempBuffer);
+        }
+    }
+
+    private ArrayBufferWriter<byte> RentTempBuffer() =>
+        s_tempBufferPool.TryPop(out var tempBuffer) ? tempBuffer : new ArrayBufferWriter<byte>();
+
+    private void ReturnTempBuffer(ArrayBufferWriter<byte> tempBuffer)
+    {
+        tempBuffer.Clear();
+        s_tempBufferPool.Push(tempBuffer);
+    }
+
     private MessagePackSerializationWriter CreateChildWriter(IBufferWriter<byte> buffer) => new(buffer)
     {
         OnBeforeObjectSerialization = OnBeforeObjectSerialization,
@@ -413,22 +437,20 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
                 break;
             case UntypedObject uobj:
                 {
-                    var tempBuf = new ArrayBufferWriter<byte>();
-                    var tempWriter = CreateChildWriter(tempBuf);
-                    foreach (var (k, v) in uobj.GetValue())
-                        tempWriter.WriteAnyValue(k, v);
-                    WriteKey(key);
-                    var w = new MessagePackWriter(outputBuffer);
-                    w.WriteMapHeader(tempWriter._propertyCount);
-                    w.WriteRaw(tempBuf.WrittenSpan);
-                    w.Flush();
+                    WriteBufferedMap(
+                        key,
+                        tempWriter =>
+                        {
+                            foreach (var (k, v) in uobj.GetValue())
+                                tempWriter.WriteAnyValue(k, v);
+                        });
                     break;
                 }
             case UntypedArray uarr:
                 {
                     var items = uarr.GetValue();
                     WriteKey(key);
-                    var w = new MessagePackWriter(outputBuffer);
+                    var w = new MessagePackWriter(_outputBuffer);
 
                     if (!items.TryGetNonEnumeratedCount(out var count))
                     {
@@ -496,3 +518,4 @@ internal class MessagePackSerializationWriter(IBufferWriter<byte> outputBuffer) 
         }
     }
 }
+
