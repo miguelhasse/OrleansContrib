@@ -56,6 +56,27 @@ dotnet test .\tests\Orleans.Serialization\Kiota\Orleans.Serialization.Kiota.Test
 dotnet run --project .\benchmarks\Orleans.Serialization\Kiota\Orleans.Serialization.Kiota.Benchmarks.csproj -c Release -- --filter "*"
 ```
 
+## Benchmark report
+
+Latest generated BenchmarkDotNet compression results are available under `BenchmarkDotNet.Artifacts\results`.
+
+Environment:
+
+- BenchmarkDotNet `0.15.8`
+- Windows 11 / .NET SDK `10.0.200`
+- Intel Core i9-10900
+
+`KiotaCodecCompressionBenchmarks` (`SerializeLargeMessagePayload`):
+
+| Compression | Codec | Mean | Allocated |
+|---|---|---:|---:|
+| Disabled | Json | 7.154 us | 3.66 KB |
+| Disabled | MessagePack | 8.476 us | 19.94 KB |
+| Disabled | MemoryPack | 10.350 us | 27.91 KB |
+| Enabled | Json | 52.257 us | 1.45 KB |
+| Enabled | MessagePack | 69.028 us | 17.61 KB |
+| Enabled | MemoryPack | 89.140 us | 25.09 KB |
+
 ## Documentation
 
 - [SystemTextJson package](src/Orleans.Serialization/Kiota/SystemTextJson/README.md)

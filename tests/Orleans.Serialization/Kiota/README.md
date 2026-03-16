@@ -42,15 +42,6 @@ From the repository root:
 dotnet test .\tests\Orleans.Serialization\Kiota\Orleans.Serialization.Kiota.Tests.csproj -c Release
 ```
 
-## Notable helpers
-
-| Helper | Purpose |
-|---|---|
-| `KiotaCodecHarnessFactory` | Builds Orleans serializer service providers for each codec and compression combination. |
-| `GraphEntitySamples` | Creates representative Graph payloads for round-trip and deep-copy tests. |
-| `GraphEntityAssert` | Performs entity-aware equality checks for the supported Graph payload set. |
-| `XunitV3OutputAdapter` | Bridges xUnit v3 output to `Microsoft.Orleans.Serialization.TestKit`. |
-
 ## Related documentation
 
 - [Repository overview](../../../README.md)
