@@ -7,7 +7,6 @@ using Orleans.Serialization.Codecs;
 using Orleans.Serialization.Serializers;
 using Orleans.Serialization.WireProtocol;
 using System.Buffers;
-using System.Text;
 
 namespace Orleans.Serialization;
 
@@ -31,7 +30,7 @@ public sealed class KiotaMemoryPackCodec(IOptions<KiotaMemoryPackOptions>? optio
     /// <summary>
     /// The well-known type alias for this codec.
     /// </summary>
-    public const string WellKnownAlias = "kiota-mempack";
+    public const string WellKnownAlias = "kiota-memorypack";
 
     /// <inheritdoc/>
     public bool? IsTypeAllowed(Type type) => IsSupportedType(type) ? true : null;

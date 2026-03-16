@@ -1,10 +1,10 @@
+using Kiota.Serialization.MemoryPack.Orleans.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Graph.Models;
 using Microsoft.Kiota.Abstractions.Serialization;
 using Orleans.Serialization.Cloning;
 using Orleans.Serialization.Kiota.Testing;
 using Orleans.Serialization.TestKit;
-using Kiota.Serialization.MemoryPack.Orleans.Tests;
 
 namespace Orleans.Serialization.Kiota.Tests;
 

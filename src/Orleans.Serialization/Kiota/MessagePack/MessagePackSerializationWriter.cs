@@ -3,7 +3,6 @@ using Microsoft.Kiota.Abstractions;
 using Microsoft.Kiota.Abstractions.Serialization;
 using System.Buffers;
 using System.Globalization;
-using System.Linq;
 
 namespace Orleans.Serialization;
 

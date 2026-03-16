@@ -7,8 +7,6 @@ using Orleans.Serialization.Codecs;
 using Orleans.Serialization.Serializers;
 using Orleans.Serialization.WireProtocol;
 using System.Buffers;
-using System.Text;
-using System.Text.Json;
 
 namespace Orleans.Serialization;
 
@@ -147,10 +145,10 @@ public sealed class KiotaMessagePackCodec(IOptions<KiotaMessagePackOptions>? opt
                     try
                     {
                         reader.ReadBytes(ref tempBuffer, (int)length);
-                        
+
                         if (!typeof(IParsable).IsAssignableFrom(type))
                             throw new IllegalTypeException(type!.Name);
-                        
+
                         if (tempBuffer.Length > 0)
                         {
                             if (compressed)
