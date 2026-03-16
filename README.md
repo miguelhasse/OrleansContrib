@@ -58,7 +58,7 @@ dotnet run --project .\benchmarks\Orleans.Serialization\Kiota\Orleans.Serializat
 
 ## Benchmark report
 
-Latest generated BenchmarkDotNet results are available under `BenchmarkDotNet.Artifacts\results`. The most recent validation run produced `Orleans.Serialization.Kiota.Benchmarks.KiotaCodecPerformanceBenchmarks-report-github.md`.
+Latest generated BenchmarkDotNet results are available under `BenchmarkDotNet.Artifacts\results`. The most recent validation run produced `Orleans.Serialization.Kiota.Benchmarks.KiotaCodecPerformanceBenchmarks-report-github.md`, and the matching compression summary is captured in `BenchmarkRun-20260316-104737.log`.
 
 Environment:
 
@@ -66,16 +66,17 @@ Environment:
 - Windows 11 `10.0.26200.8037` / .NET SDK `10.0.200`
 - Intel Core i9-10900 CPU 2.80GHz
 
-The latest `KiotaCodecPerformanceBenchmarks` run compares:
+The latest validation run compares:
 
 - `Serialize`, `Deserialize`, and `DeepCopy`
 - codec types
 - compression disabled and enabled
 - Graph entity kinds
+- payload size with and without compression
 - mean execution time
 - memory allocation
 
-`KiotaCodecCompressionBenchmarks` is still available for payload-size-focused runs, but the most recent published artifact is the full performance report.
+The published artifact is the full performance report, while the same run's compression benchmark log supplies `Uncompressed Bytes`, `Compressed Bytes`, and `Compression Ratio`.
 
 `Serialize` comparison excerpt from the latest generated performance report (`mean`, compression off/on):
 
@@ -92,6 +93,20 @@ The latest `KiotaCodecPerformanceBenchmarks` run compares:
 | Team | 21.915 / 73.457 us | 49.072 / 193.695 us | 45.400 / 218.494 us |
 
 The full report also captures allocation data for every `Serialize`, `Deserialize`, and `DeepCopy` run, plus HTML and CSV exports in the same results folder.
+
+Payload-size excerpt from the latest compression summary (`uncompressed -> compressed bytes / ratio`):
+
+| Entity | Json | MessagePack | MemoryPack |
+|---|---|---|---|
+| User | 742 -> 382 B / 48.52% | 4878 -> 1455 B / 70.17% | 7044 -> 1697 B / 75.91% |
+| Message | 3411 -> 684 B / 79.95% | 3654 -> 821 B / 77.53% | 4499 -> 1000 B / 77.77% |
+| Chat | 5177 -> 1172 B / 77.36% | 9821 -> 2454 B / 75.01% | 13899 -> 2889 B / 79.21% |
+| ChatMessage | 3235 -> 851 B / 73.69% | 3594 -> 977 B / 72.82% | 5013 -> 1205 B / 75.96% |
+| Event | 1712 -> 544 B / 68.22% | 2615 -> 965 B / 63.10% | 3655 -> 1170 B / 67.99% |
+| Group | 1294 -> 403 B / 68.86% | 8743 -> 1837 B / 78.99% | 12286 -> 2109 B / 82.83% |
+| Contact | 902 -> 466 B / 48.34% | 1248 -> 696 B / 44.23% | 1994 -> 857 B / 57.02% |
+| DriveItem | 1868 -> 528 B / 71.73% | 4008 -> 882 B / 77.99% | 6387 -> 1071 B / 83.23% |
+| Team | 2249 -> 641 B / 71.50% | 10044 -> 2257 B / 77.53% | 14035 -> 2590 B / 81.55% |
 
 ## Documentation
 

@@ -46,8 +46,9 @@ The most recent validation run produced:
 - `BenchmarkDotNet.Artifacts\results\Orleans.Serialization.Kiota.Benchmarks.KiotaCodecPerformanceBenchmarks-report-github.md`
 - `BenchmarkDotNet.Artifacts\results\Orleans.Serialization.Kiota.Benchmarks.KiotaCodecPerformanceBenchmarks-report.csv`
 - `BenchmarkDotNet.Artifacts\results\Orleans.Serialization.Kiota.Benchmarks.KiotaCodecPerformanceBenchmarks-report.html`
+- `BenchmarkDotNet.Artifacts\BenchmarkRun-20260316-104737.log`
 
-That report covers `Serialize`, `Deserialize`, and `DeepCopy` across all codec kinds, all sample entity kinds, and both compression modes.
+The report covers `Serialize`, `Deserialize`, and `DeepCopy` across all codec kinds, all sample entity kinds, and both compression modes. The matching run log includes the compression-benchmark summary with payload-size columns.
 
 `KiotaCodecCompressionBenchmarks` still adds comparison columns for `Collection Shape`, `Uncompressed Bytes`, `Compressed Bytes`, and `Compression Ratio` when you run the compression-focused filter.
 
@@ -78,6 +79,20 @@ Latest `Serialize` excerpt with compression enabled (`mean / allocated`):
 | Contact | 34.975 us / 1.16 KB | 51.255 us / 6.75 KB | 66.047 us / 6.76 KB |
 | DriveItem | 53.836 us / 5.48 KB | 95.077 us / 31.3 KB | 120.819 us / 45.21 KB |
 | Team | 73.457 us / 4.63 KB | 193.695 us / 79.7 KB | 218.494 us / 108.84 KB |
+
+Latest payload-size excerpt from the matching compression summary (`uncompressed -> compressed bytes / ratio`):
+
+| Collection Shape | Entity | Json | MessagePack | MemoryPack |
+|---|---|---|---|---|
+| PrimitiveAndObjectCollections | User | 742 -> 382 B / 48.52% | 4878 -> 1455 B / 70.17% | 7044 -> 1697 B / 75.91% |
+| AttachmentHeavyCollections | Message | 3411 -> 684 B / 79.95% | 3654 -> 821 B / 77.53% | 4499 -> 1000 B / 77.77% |
+| ConversationCollections | Chat | 5177 -> 1172 B / 77.36% | 9821 -> 2454 B / 75.01% | 13899 -> 2889 B / 79.21% |
+| InteractionCollections | ChatMessage | 3235 -> 851 B / 73.69% | 3594 -> 977 B / 72.82% | 5013 -> 1205 B / 75.96% |
+| SchedulingCollections | Event | 1712 -> 544 B / 68.22% | 2615 -> 965 B / 63.10% | 3655 -> 1170 B / 67.99% |
+| DirectoryCollections | Group | 1294 -> 403 B / 68.86% | 8743 -> 1837 B / 78.99% | 12286 -> 2109 B / 82.83% |
+| MostlyPrimitiveCollections | Contact | 902 -> 466 B / 48.34% | 1248 -> 696 B / 44.23% | 1994 -> 857 B / 57.02% |
+| HierarchicalCollections | DriveItem | 1868 -> 528 B / 71.73% | 4008 -> 882 B / 77.99% | 6387 -> 1071 B / 83.23% |
+| NestedAggregateCollections | Team | 2249 -> 641 B / 71.50% | 10044 -> 2257 B / 77.53% | 14035 -> 2590 B / 81.55% |
 
 ## Related documentation
 
