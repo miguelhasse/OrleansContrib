@@ -25,7 +25,7 @@ namespace Orleans.Serialization;
 public sealed class KiotaMemoryPackCodec(IOptions<KiotaMemoryPackOptions>? options) : IGeneralizedCodec, IGeneralizedCopier, ITypeFilter
 {
     private static readonly Type SelfType = typeof(KiotaMemoryPackCodec);
-    private readonly bool _useCompression = options?.Value.Compression ?? false;
+    private readonly KiotaMemoryPackOptions _options = options?.Value ?? new KiotaMemoryPackOptions();
 
     /// <summary>
     /// The well-known type alias for this codec.
@@ -56,7 +56,7 @@ public sealed class KiotaMemoryPackCodec(IOptions<KiotaMemoryPackOptions>? optio
         writer.WriteFieldHeader(fieldIdDelta, expectedType, SelfType, WireType.TagDelimited);
 
         // Write the compression flag
-        BoolCodec.WriteField(ref writer, 0, _useCompression);
+        BoolCodec.WriteField(ref writer, 0, _options.Compression);
 
         // Write the type name
         ReferenceCodec.MarkValueField(writer.Session);
@@ -76,9 +76,9 @@ public sealed class KiotaMemoryPackCodec(IOptions<KiotaMemoryPackOptions>? optio
             ReferenceCodec.MarkValueField(writer.Session);
             writer.WriteFieldHeaderExpected(2, WireType.LengthPrefixed);
 
-            if (_useCompression)
+            if (_options.Compression)
             {
-                using var compressed = BrotliCodec.Compress(bufferWriter.Value.AsReadOnlySequence());
+                using var compressed = BrotliCodec.Compress(bufferWriter.Value.AsReadOnlySequence(), _options.Quality, _options.Window);
                 writer.WriteVarUInt32((uint)compressed.Memory.Length);
                 writer.Write(compressed.Memory.Span);
             }
