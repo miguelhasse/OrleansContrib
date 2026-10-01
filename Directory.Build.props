@@ -1,0 +1,10 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Suppress NETSDK1057: the installed SDK is a preview build (e.g. 11.0.100-rc.x),
+         even though all projects here target the GA net10.0 TFM. This is the SDK's own
+         supported suppression switch for that informational message. -->
+    <SuppressNETCoreSdkPreviewMessage>true</SuppressNETCoreSdkPreviewMessage>
+  </PropertyGroup>
+
+</Project>

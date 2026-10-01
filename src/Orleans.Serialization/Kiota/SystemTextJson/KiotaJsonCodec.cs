@@ -8,6 +8,7 @@ using Orleans.Serialization.Codecs;
 using Orleans.Serialization.Serializers;
 using Orleans.Serialization.WireProtocol;
 using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 
 namespace Orleans.Serialization;
@@ -27,7 +28,7 @@ public sealed class KiotaJsonCodec(IOptions<KiotaJsonCodecOptions>? options) : I
 
     public bool IsSupportedType(Type type) => !type.IsAbstract && !type.IsInterface && (type == SelfType || typeof(IParsable).IsAssignableFrom(type));
 
-    public void WriteField<TBufferWriter>(ref Writer<TBufferWriter> writer, uint fieldIdDelta, Type expectedType, object value) where TBufferWriter : IBufferWriter<byte>
+    public void WriteField<TBufferWriter>(ref Writer<TBufferWriter> writer, uint fieldIdDelta, [AllowNull] Type expectedType, object? value) where TBufferWriter : IBufferWriter<byte>
     {
         if (ReferenceCodec.TryWriteReferenceField(ref writer, fieldIdDelta, expectedType, value))
             return;
@@ -87,7 +88,7 @@ public sealed class KiotaJsonCodec(IOptions<KiotaJsonCodecOptions>? options) : I
     public object ReadValue<TInput>(ref Reader<TInput> reader, Field field)
     {
         if (field.IsReference)
-            return ReferenceCodec.ReadReference(ref reader, field.FieldType);
+            return ReferenceCodec.ReadReference(ref reader, field.FieldType)!;
 
         if (field.FieldType != SelfType)
             throw new FieldTypeInvalidException();

@@ -1,4 +1,3 @@
-using Kiota.Serialization.MemoryPack.Orleans.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Graph.Models;
 using Microsoft.Kiota.Abstractions.Serialization;
@@ -102,7 +101,7 @@ public sealed class KiotaCodecGraphEntityTests(ITestOutputHelper output)
     }
 
     private abstract class MessageCopierTester(ITestOutputHelper output, bool compression)
-        : CopierTester<Message, IDeepCopier<Message>>(new XunitV3OutputAdapter(output)), IMessageCopierTester
+        : CopierTester<Message, IDeepCopier<Message>>(output), IMessageCopierTester
     {
         private readonly bool _compression = compression;
 
@@ -117,7 +116,7 @@ public sealed class KiotaCodecGraphEntityTests(ITestOutputHelper output)
 
         protected override Message[] TestValues => [GraphEntitySamples.CreateMessage()];
 
-        protected override bool Equals(Message left, Message right) => GraphEntityAssert.AreEqual(left, right);
+        protected override bool Equals(Message? left, Message? right) => GraphEntityAssert.AreEqual(left, right);
 
         protected override Action<Action<Message>> ValueProvider =>
             sink =>

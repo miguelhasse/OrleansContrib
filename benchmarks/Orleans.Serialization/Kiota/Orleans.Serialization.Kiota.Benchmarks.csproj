@@ -8,6 +8,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- BenchmarkDotNet requires Release builds for meaningful results -->
     <Optimize>true</Optimize>
+    <!-- NU1608: BenchmarkDotNet's Roslyn dependency pins Microsoft.CodeAnalysis.Common to exactly 5.0.0,
+         but we intentionally resolve the higher 5.9.0 required by Orleans (see pin below). -->
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

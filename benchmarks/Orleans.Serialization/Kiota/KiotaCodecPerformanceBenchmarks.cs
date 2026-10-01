@@ -35,8 +35,8 @@ public class KiotaCodecPerformanceBenchmarks
     public byte[] Serialize() => _harness!.ObjectSerializer.SerializeToArray(_value);
 
     [Benchmark]
-    public object Deserialize() => _harness!.ObjectSerializer.Deserialize(_serialized);
+    public object Deserialize() => _harness!.ObjectSerializer.Deserialize(_serialized)!;
 
     [Benchmark]
-    public object DeepCopy() => _harness!.ObjectDeepCopier.Copy(_value);
+    public object DeepCopy() => _harness!.ObjectDeepCopier.Copy(_value)!;
 }
