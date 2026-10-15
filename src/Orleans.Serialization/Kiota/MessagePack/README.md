@@ -13,35 +13,53 @@ Kiota-generated clients expose models through `IParsable`, which Orleans does no
 
 ## Registration
 
-Call `AddKiotaSerializer` on the Orleans `ISerializerBuilder` during host setup:
+Call `AddKiotaMessagePackSerializer` on the Orleans `ISerializerBuilder` during host setup:
 
 ```csharp
 siloBuilder.Services.AddOrleans(orleans =>
 {
     orleans.Services.AddSerializer(serializer =>
     {
-        serializer.AddKiotaSerializer();
+        serializer.AddKiotaMessagePackSerializer(isSupported: null);
     });
 });
 ```
 
+The simple overload accepts `Func<Type, bool>? isSupported` and an optional `compression` flag. The predicate applies to both serialization and deep-copy; `null` registers no type selectors.
+
 ### With Brotli compression
 
 ```csharp
-serializer.AddKiotaSerializer(options =>
-{
-    options.Configure(o => o.Compression = true);
-});
+serializer.AddKiotaMessagePackSerializer(isSupported: null, compression: true);
 ```
+
+### Restricting supported types
+
+```csharp
+serializer.AddKiotaMessagePackSerializer(
+    type => typeof(IParsable).IsAssignableFrom(type) && type.Namespace?.StartsWith("MyApp.Client") == true,
+    compression: true);
+```
+
+For separate serialization and copy predicates, call `AddKiotaMessagePackSerializer`:
+
+```csharp
+serializer.AddKiotaMessagePackSerializer(
+    isSerializable: type => typeof(IParsable).IsAssignableFrom(type),
+    isCopyable: null);
+```
+
+The codec and its `IGeneralizedCodec`, `IGeneralizedCopier`, and `ITypeFilter` mappings are registered once. The `kiota-msgpack` well-known alias is added to `WellKnownTypeAliases`. A selector is registered only when its predicate is non-null.
 
 ## Components
 
 | File | Description |
 |---|---|
-| `KiotaMessagePackCodec` | Generalized Orleans codec and copier for all supported `IParsable` types. Registered with alias `kiota-msgpack`. |
-| `KiotaMessagePackOptions` | Options type with the `Compression` flag. |
-| `SerializationHostingExtensions` | `AddKiotaSerializer` registration extension for `ISerializerBuilder`. |
-| `BrotliCodec` | Internal helper for one-shot Brotli compression and decompression. |
+| `KiotaMessagePackCodec` | Generalized Orleans codec and copier for concrete Kiota `IParsable` types. Registered with alias `kiota-msgpack`. |
+| `KiotaMessagePackOptions` | Options class with the `Compression` flag, disabled by default. |
+| `SerializationHostingExtensions` | Simple and full `AddKiotaMessagePackSerializer` registration overloads. |
+| `MessagePackSerializationWriter` / `MessagePackParseNode` | Kiota writer and parse node backed by MessagePack. |
+| `BrotliCodec` | Shared utility for one-shot Brotli compression and decompression. |
 
 ## Requirements
 

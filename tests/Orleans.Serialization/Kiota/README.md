@@ -20,6 +20,8 @@ The test suite currently covers:
 - deep-copy behavior for Kiota `IParsable` models
 - `KiotaTestModel` round-trip and deep-copy coverage
 - `KiotaCollectionTestModel` coverage for primitive, object, enum, and empty collections
+- serializer-builder registration coverage for codec/copy selectors, compression options, and well-known aliases
+- independent serialization and deep-copy type predicates
 - `Microsoft.Orleans.Serialization.TestKit` copier smoke tests where it adds value
 
 ## Graph sample set
@@ -28,6 +30,8 @@ The Graph-based tests use nested, deterministic samples defined in `KiotaCodecTe
 
 - `User`
 - `Message`
+- `Chat`
+- `ChatMessage`
 - `Event`
 - `Group`
 - `Contact`
